@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: stremet-postgres
+    environment:
+      POSTGRES_USER: stremet
+      POSTGRES_PASSWORD: stremet
+      POSTGRES_DB: stremet_storage
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

@@ -1,0 +1,6 @@
+backend/.env
+frontend/.env.local
+**/node_modules/
+frontend/.next/
+frontend/*.log
+frontend/tsconfig.tsbuildinfo
