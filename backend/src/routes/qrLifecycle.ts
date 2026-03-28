@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { processAssemblyQrCompile } from '../lib/qrAssemblyCompile';
 import { processProductQrIntake } from '../lib/qrProductIntake';
+import { getQrScanResult, getTabletSummary } from '../lib/qrRead';
 
 export const qrLifecycleRouter = Router();
 
@@ -18,6 +19,20 @@ qrLifecycleRouter.post('/assembly-compile', asyncHandler(async (req, res) => {
   try {
     const result = await processAssemblyQrCompile(req.body);
     res.status(201).json({ data: result });
+  } catch (error) {
+    handleRouteError(res, error);
+  }
+}));
+
+qrLifecycleRouter.get('/tablet/summary', asyncHandler(async (_req, res) => {
+  const result = await getTabletSummary();
+  res.json({ data: result });
+}));
+
+qrLifecycleRouter.get('/:qrCode', asyncHandler(async (req, res) => {
+  try {
+    const result = await getQrScanResult(req.params.qrCode as string);
+    res.json({ data: result });
   } catch (error) {
     handleRouteError(res, error);
   }
