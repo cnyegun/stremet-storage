@@ -12,7 +12,6 @@ async function reset(): Promise<void> {
       DROP TABLE IF EXISTS customers CASCADE;
       DROP TABLE IF EXISTS shelf_slots CASCADE;
       DROP TABLE IF EXISTS racks CASCADE;
-      DROP TABLE IF EXISTS zones CASCADE;
       DROP TABLE IF EXISTS _migrations CASCADE;
     `);
     console.log('Database reset complete. All tables dropped.');

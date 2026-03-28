@@ -90,15 +90,6 @@ export function actionLabel(action: string) {
     check_out: 'Check out',
     move: 'Move',
     note_added: 'Note added',
-    job_created: 'Job created',
-    job_started: 'Job started',
-    job_completed: 'Job completed',
-    job_cancelled: 'Job cancelled',
-    unit_consumed: 'Unit consumed',
-    unit_produced: 'Unit produced',
-    unit_scrapped: 'Unit scrapped',
-    unit_reworked: 'Unit reworked',
-    unit_held: 'Unit held',
   };
   return labels[action] || toTitleCase(action);
 }

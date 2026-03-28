@@ -13,8 +13,6 @@ const search_1 = require("./routes/search");
 const stats_1 = require("./routes/stats");
 const customers_1 = require("./routes/customers");
 const machines_1 = require("./routes/machines");
-const productionJobs_1 = require("./routes/productionJobs");
-const assistant_1 = require("./routes/assistant");
 const errorHandler_1 = require("./middleware/errorHandler");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
@@ -36,8 +34,6 @@ app.use('/api/search', search_1.searchRouter);
 app.use('/api/stats', stats_1.statsRouter);
 app.use('/api/customers', customers_1.customersRouter);
 app.use('/api/machines', machines_1.machinesRouter);
-app.use('/api/production-jobs', productionJobs_1.productionJobsRouter);
-app.use('/api/assistant', assistant_1.assistantRouter);
 // Global error handler (must be after routes)
 app.use(errorHandler_1.errorHandler);
 app.listen(PORT, () => {

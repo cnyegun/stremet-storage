@@ -3,8 +3,6 @@ import Link from 'next/link';
 import { GlobalSearch } from '@/components/ui/GlobalSearch';
 import { NavLink } from '@/components/ui/NavLink';
 import { ToastProvider } from '@/components/ui/Toast';
-import { SannaChat } from '@/components/ui/SannaChat';
-import { WorkerSessionProvider, WorkerBadge } from '@/components/ui/WorkerSession';
 import ThemeRegistry from '@/components/ThemeRegistry';
 import './globals.css';
 
@@ -23,7 +21,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       </head>
       <body>
         <ThemeRegistry>
-          <WorkerSessionProvider>
           <ToastProvider>
             <div style={{ minHeight: '100vh', backgroundColor: 'var(--mui-palette-background-default)' }}>
               <header style={{ background: '#263238', color: '#fff', borderBottom: '2px solid #1565C0' }}>
@@ -44,7 +41,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                     <NavLink href="/check-in" label="Check in" />
                     <NavLink href="/machines" label="Machines" />
                     <NavLink href="/activity" label="Activity" />
-                    <WorkerBadge />
                   </nav>
                 </div>
               </header>
@@ -52,9 +48,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 {children}
               </main>
             </div>
-            <SannaChat />
           </ToastProvider>
-          </WorkerSessionProvider>
         </ThemeRegistry>
       </body>
     </html>

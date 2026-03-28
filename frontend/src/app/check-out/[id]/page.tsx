@@ -15,7 +15,6 @@ import { Input } from '@/components/ui/Input';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { LocationBadge, MachineLocationBadge } from '@/components/ui/LocationBadge';
 import { useToast } from '@/components/ui/Toast';
-import { useWorkerSession } from '@/components/ui/WorkerSession';
 import { api } from '@/lib/api';
 import type { ItemDetail } from '@shared/types';
 
@@ -24,8 +23,8 @@ export default function CheckOutPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { showToast } = useToast();
-  const { workerName } = useWorkerSession();
   const [item, setItem] = useState<ItemDetail | null>(null);
+  const [workerName, setWorkerName] = useState('');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -146,7 +145,10 @@ export default function CheckOutPage() {
           </Grid>
 
           <Grid container spacing={2} mt={2}>
-            <Grid size={{ xs: 12 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Input label="Worker name" value={workerName} onChange={(event: ChangeEvent<HTMLInputElement>) => setWorkerName(event.target.value)} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
               <TextField
                 label="Notes"
                 value={notes}

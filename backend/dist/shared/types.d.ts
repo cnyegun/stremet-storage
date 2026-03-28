@@ -1,10 +1,8 @@
 export type ItemType = 'customer_order' | 'general_stock';
-export type ActionType = 'check_in' | 'check_out' | 'move' | 'note_added' | 'job_created' | 'job_started' | 'job_completed' | 'job_cancelled' | 'unit_consumed' | 'unit_produced' | 'unit_scrapped' | 'unit_reworked' | 'unit_held';
+export type ActionType = 'check_in' | 'check_out' | 'move' | 'note_added';
 export type MachineCategory = 'sheet_metal' | 'cutting' | 'laser' | 'robot_bending' | 'bending';
 export type MachineAssignmentStatus = 'queued' | 'processing' | 'needs_attention' | 'ready_for_storage';
 export type RackType = 'raw_materials' | 'work_in_progress' | 'finished_goods' | 'customer_orders' | 'general_stock';
-export type ProductionJobStatus = 'draft' | 'in_progress' | 'completed' | 'cancelled';
-export type ProductionOutputOutcome = 'good' | 'scrap' | 'rework' | 'hold';
 export interface Zone {
     id: string;
     name: string;
@@ -84,9 +82,6 @@ export interface ActivityLog {
     id: string;
     item_id: string;
     action: ActionType;
-    production_job_id?: string | null;
-    tracking_unit_code?: string | null;
-    machine_id?: string | null;
     from_location: string | null;
     to_location: string | null;
     performed_by: string;
@@ -116,46 +111,6 @@ export interface MachineAssignment {
     removed_by: string | null;
     notes: string | null;
     created_at: string;
-}
-export interface ProductionJob {
-    id: string;
-    job_code: string;
-    machine_id: string;
-    status: ProductionJobStatus;
-    assigned_by: string;
-    completed_by: string | null;
-    started_at: string | null;
-    completed_at: string | null;
-    notes: string | null;
-    result_summary: string | null;
-    created_at: string;
-    updated_at: string;
-}
-export interface ProductionJobInput {
-    id: string;
-    production_job_id: string;
-    machine_assignment_id: string;
-    item_id: string;
-    unit_code: string;
-    planned_quantity: number;
-    consumed_quantity: number;
-    outcome: 'planned' | 'consumed' | 'partial';
-    notes: string | null;
-    created_at: string;
-}
-export interface ProductionJobOutput {
-    id: string;
-    production_job_id: string;
-    item_id: string;
-    unit_code: string;
-    output_type: 'storage' | 'machine' | 'none';
-    storage_assignment_id: string | null;
-    machine_assignment_id: string | null;
-    quantity: number;
-    outcome: ProductionOutputOutcome;
-    created_by: string;
-    created_at: string;
-    notes: string | null;
 }
 export interface ApiResponse<T> {
     data: T;
@@ -264,7 +219,6 @@ export interface TrackingUnit {
 export interface ItemDetail extends ItemWithLocation {
     machine_locations: MachineLocation[];
     tracking_units: TrackingUnit[];
-    production_history: ProductionHistoryEntry[];
     activity_history: ActivityLog[];
 }
 export interface MachineWithItemCount extends Machine {
@@ -300,43 +254,8 @@ export interface MachineStats {
 }
 export interface MachineDetail extends Machine {
     items: MachineDetailItem[];
-    jobs: ProductionJobSummary[];
     activity: MachineActivity[];
     stats: MachineStats;
-}
-export interface ProductionJobSummary extends ProductionJob {
-    machine_code: string;
-    machine_name: string;
-    input_count: number;
-    output_count: number;
-}
-export interface ProductionJobInputDetail extends ProductionJobInput {
-    item_code: string;
-    item_name: string;
-    customer_name: string | null;
-    available_quantity: number;
-}
-export interface ProductionJobOutputDetail extends ProductionJobOutput {
-    item_code: string;
-    item_name: string;
-    customer_name: string | null;
-}
-export interface ProductionJobDetail extends ProductionJobSummary {
-    inputs: ProductionJobInputDetail[];
-    outputs: ProductionJobOutputDetail[];
-}
-export interface ProductionHistoryEntry {
-    job_id: string;
-    job_code: string;
-    machine_id: string;
-    machine_code: string;
-    machine_name: string;
-    role: 'input' | 'output';
-    unit_code: string;
-    quantity: number;
-    outcome: string;
-    completed_at: string | null;
-    created_at: string;
 }
 export interface ActivityLogWithItem extends ActivityLog {
     item_code: string;
@@ -433,42 +352,6 @@ export interface CreateItemRequest {
     type: ItemType;
     order_number?: string;
     quantity: number;
-}
-export interface CreateProductionJobRequest {
-    machine_id: string;
-    input_assignment_ids: string[];
-    assigned_by: string;
-    notes?: string;
-}
-export interface CompleteProductionJobRequest {
-    completed_by: string;
-    notes?: string;
-    inputs: Array<{
-        machine_assignment_id: string;
-        consumed_quantity: number;
-    }>;
-    outputs: Array<{
-        item_id: string;
-        quantity: number;
-        outcome: ProductionOutputOutcome;
-        destination_type: 'storage' | 'machine' | 'none';
-        shelf_slot_id?: string;
-        machine_id?: string;
-        notes?: string;
-    }>;
-}
-export interface AssistantRequest {
-    message: string;
-    history: {
-        role: 'user' | 'assistant';
-        content: string;
-    }[];
-}
-export interface AssistantResponse {
-    message: string;
-    sql?: string;
-    data?: Record<string, unknown>[];
-    rowCount?: number;
 }
 export interface UpdateItemRequest {
     name?: string;

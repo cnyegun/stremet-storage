@@ -3,12 +3,12 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { racksRouter } from './routes/racks';
 import { itemsRouter } from './routes/items';
+import { trackingRouter } from './routes/tracking';
 import { activityRouter } from './routes/activity';
 import { searchRouter } from './routes/search';
 import { statsRouter } from './routes/stats';
 import { customersRouter } from './routes/customers';
 import { machinesRouter } from './routes/machines';
-import { assistantRouter } from './routes/assistant';
 import { errorHandler } from './middleware/errorHandler';
 
 dotenv.config();
@@ -30,12 +30,12 @@ app.get('/api/health', (_req, res) => {
 // Routes
 app.use('/api/racks', racksRouter);
 app.use('/api/items', itemsRouter);
+app.use('/api/tracking', trackingRouter);
 app.use('/api/activity', activityRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/customers', customersRouter);
 app.use('/api/machines', machinesRouter);
-app.use('/api/assistant', assistantRouter);
 
 // Global error handler (must be after routes)
 app.use(errorHandler);

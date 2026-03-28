@@ -24,7 +24,6 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { LocationBadge } from '@/components/ui/LocationBadge';
 import { Select } from '@/components/ui/Select';
 import { useToast } from '@/components/ui/Toast';
-import { useWorkerSession } from '@/components/ui/WorkerSession';
 import { api } from '@/lib/api';
 
 type FlowState = 'lookup' | 'duplicate' | 'details' | 'location' | 'confirm' | 'success';
@@ -38,7 +37,6 @@ function getActiveStep(flow: FlowState) {
 
 export default function CheckInPage() {
   const { showToast } = useToast();
-  const { workerName } = useWorkerSession();
   const [flow, setFlow] = useState<FlowState>('lookup');
   const [lookupCode, setLookupCode] = useState('');
   const [existingItem, setExistingItem] = useState<ItemWithLocation | null>(null);
@@ -50,6 +48,7 @@ export default function CheckInPage() {
   const [rackDetail, setRackDetail] = useState<RackWithShelves | null>(null);
   const [selectedRackId, setSelectedRackId] = useState('');
   const [selectedShelfSlotId, setSelectedShelfSlotId] = useState('');
+  const [workerName, setWorkerName] = useState('');
   const [notes, setNotes] = useState('');
   const [checkInQuantity, setCheckInQuantity] = useState(1);
   const [resultLocation, setResultLocation] = useState('');
@@ -295,8 +294,9 @@ export default function CheckInPage() {
               </Grid>
             </Grid>
             <Grid container spacing={2}>
-              <Grid size={{ xs: 12, md: 3 }}><Input label="Unit quantity" type="number" min="1" value={String(checkInQuantity)} onChange={(e: any) => setCheckInQuantity(Math.max(1, Number(e.target.value) || 1))} /></Grid>
-              <Grid size={{ xs: 12, md: 9 }}>
+              <Grid size={{ xs: 12, md: 4 }}><Input label="Worker name" value={workerName} onChange={(e: any) => setWorkerName(e.target.value)} /></Grid>
+              <Grid size={{ xs: 12, md: 2 }}><Input label="Unit quantity" type="number" min="1" value={String(checkInQuantity)} onChange={(e: any) => setCheckInQuantity(Math.max(1, Number(e.target.value) || 1))} /></Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
                 <TextField label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} multiline minRows={2} fullWidth />
               </Grid>
             </Grid>

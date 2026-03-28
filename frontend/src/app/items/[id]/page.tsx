@@ -23,7 +23,6 @@ import { LocationBadge, MachineLocationBadge } from '@/components/ui/LocationBad
 import { Modal } from '@/components/ui/Modal';
 import { Select } from '@/components/ui/Select';
 import { useToast } from '@/components/ui/Toast';
-import { useWorkerSession } from '@/components/ui/WorkerSession';
 import { api } from '@/lib/api';
 import { actionLabel, formatDateTime, formatNumber, locationLabel, machineCategoryLabel } from '@/lib/utils';
 
@@ -46,7 +45,6 @@ function trackingUnitLocationLabel(unit: TrackingUnit) {
 export default function ItemDetailPage() {
   const params = useParams<{ id: string }>();
   const { showToast } = useToast();
-  const { workerName } = useWorkerSession();
   const [item, setItem] = useState<ItemDetail | null>(null);
   const [racks, setRacks] = useState<RackWithStats[]>([]);
   const [machines, setMachines] = useState<MachineWithItemCount[]>([]);
@@ -55,6 +53,7 @@ export default function ItemDetailPage() {
   const [selectedSlotId, setSelectedSlotId] = useState('');
   const [selectedMachineId, setSelectedMachineId] = useState('');
   const [destType, setDestType] = useState<'storage' | 'machine'>('storage');
+  const [workerName, setWorkerName] = useState('');
   const [moveNotes, setMoveNotes] = useState('');
   const [moveQuantity, setMoveQuantity] = useState(1);
   const [moveSource, setMoveSource] = useState<MoveSource | null>(null);
@@ -390,6 +389,7 @@ export default function ItemDetailPage() {
             />
           )}
 
+          <Input label="Worker name" value={workerName} onChange={(event: any) => setWorkerName(event.target.value)} />
           <Input label="Move notes" value={moveNotes} onChange={(event: any) => setMoveNotes(event.target.value)} />
         </Stack>
       </Modal>
