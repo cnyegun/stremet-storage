@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { GlobalSearch } from '@/components/ui/GlobalSearch';
 import { NavLink } from '@/components/ui/NavLink';
 import { ToastProvider } from '@/components/ui/Toast';
+import { SannaChat } from '@/components/ui/SannaChat';
 import ThemeRegistry from '@/components/ThemeRegistry';
 import './globals.css';
 
@@ -48,6 +49,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 {children}
               </main>
             </div>
+            <SannaChat />
           </ToastProvider>
         </ThemeRegistry>
       </body>

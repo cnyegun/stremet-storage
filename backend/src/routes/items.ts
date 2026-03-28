@@ -497,6 +497,48 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
     ORDER BY assigned_at DESC, unit_code ASC
   `, [id]);
 
+  const productionHistoryResult = await pool.query(`
+    SELECT *
+    FROM (
+      SELECT
+        pj.id AS job_id,
+        pj.job_code,
+        pj.machine_id,
+        m.code AS machine_code,
+        m.name AS machine_name,
+        'input'::text AS role,
+        pji.unit_code,
+        pji.consumed_quantity AS quantity,
+        pji.outcome,
+        pj.completed_at,
+        pj.created_at
+      FROM production_job_inputs pji
+      JOIN production_jobs pj ON pji.production_job_id = pj.id
+      JOIN machines m ON pj.machine_id = m.id
+      WHERE pji.item_id = $1
+
+      UNION ALL
+
+      SELECT
+        pj.id AS job_id,
+        pj.job_code,
+        pj.machine_id,
+        m.code AS machine_code,
+        m.name AS machine_name,
+        'output'::text AS role,
+        pjo.unit_code,
+        pjo.quantity,
+        pjo.outcome,
+        pj.completed_at,
+        pj.created_at
+      FROM production_job_outputs pjo
+      JOIN production_jobs pj ON pjo.production_job_id = pj.id
+      JOIN machines m ON pj.machine_id = m.id
+      WHERE pjo.item_id = $1
+    ) production_history
+    ORDER BY COALESCE(completed_at, created_at) DESC
+  `, [id]);
+
   // Activity history
   const historyResult = await pool.query(`
     SELECT * FROM activity_log
@@ -510,6 +552,7 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
       current_location: locationResult.rows[0] || null,
       machine_locations: machineResult.rows,
       tracking_units: trackingUnitsResult.rows,
+      production_history: productionHistoryResult.rows,
       activity_history: historyResult.rows,
     },
   });

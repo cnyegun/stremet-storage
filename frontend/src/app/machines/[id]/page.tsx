@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
+import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 import Grid from '@mui/material/Grid';
@@ -19,7 +20,19 @@ import ScheduleIcon from '@mui/icons-material/ScheduleOutlined';
 import CheckCircleIcon from '@mui/icons-material/CheckCircleOutlined';
 import WarningIcon from '@mui/icons-material/WarningAmberOutlined';
 import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUncheckedOutlined';
-import type { ItemDetail, ItemWithLocation, MachineDetail, MachineDetailItem, MachineWithItemCount, RackWithShelves, RackWithStats, TrackingUnit } from '@shared/types';
+import type {
+  CompleteProductionJobRequest,
+  ItemDetail,
+  ItemWithLocation,
+  MachineDetail,
+  MachineDetailItem,
+  MachineWithItemCount,
+  ProductionJobDetail,
+  ProductionJobSummary,
+  RackWithShelves,
+  RackWithStats,
+  TrackingUnit,
+} from '@shared/types';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -97,6 +110,31 @@ export default function MachineDetailPage() {
   const [statusWorkerName, setStatusWorkerName] = useState('');
   const [statusNotes, setStatusNotes] = useState('');
   const [statusSubmitting, setStatusSubmitting] = useState(false);
+  const [createJobOpen, setCreateJobOpen] = useState(false);
+  const [selectedJobInputIds, setSelectedJobInputIds] = useState<string[]>([]);
+  const [createJobWorkerName, setCreateJobWorkerName] = useState('');
+  const [createJobNotes, setCreateJobNotes] = useState('');
+  const [createJobSubmitting, setCreateJobSubmitting] = useState(false);
+  const [jobOpen, setJobOpen] = useState(false);
+  const [selectedJob, setSelectedJob] = useState<ProductionJobSummary | null>(null);
+  const [jobDetail, setJobDetail] = useState<ProductionJobDetail | null>(null);
+  const [jobLoading, setJobLoading] = useState(false);
+  const [jobActionWorkerName, setJobActionWorkerName] = useState('');
+  const [jobActionNotes, setJobActionNotes] = useState('');
+  const [jobSubmitting, setJobSubmitting] = useState(false);
+  const [outputCatalog, setOutputCatalog] = useState<Array<{ id: string; label: string }>>([]);
+  const [jobRackId, setJobRackId] = useState('');
+  const [jobRackDetail, setJobRackDetail] = useState<RackWithShelves | null>(null);
+  const [jobOutputRows, setJobOutputRows] = useState<Array<{
+    key: string;
+    item_id: string;
+    quantity: number;
+    outcome: 'good' | 'scrap' | 'rework' | 'hold';
+    destination_type: 'storage' | 'machine' | 'none';
+    shelf_slot_id: string;
+    machine_id: string;
+    notes: string;
+  }>>([]);
   const debouncedImportQuery = useDebouncedValue(importQuery, 250);
 
   const importableUnits = useMemo(
@@ -120,6 +158,29 @@ export default function MachineDetailPage() {
     ((moveDestinationType === 'shelf' && moveShelfSlotId) || (moveDestinationType === 'machine' && moveMachineId)),
   ) && !moveSubmitting;
   const canSubmitStatus = Boolean(statusUnit && statusWorkerName.trim() && nextStatus) && !statusSubmitting;
+  const canCreateJob = selectedJobInputIds.length > 0 && createJobWorkerName.trim().length > 0 && !createJobSubmitting;
+  const canStartJob = Boolean(selectedJob && selectedJob.status === 'draft' && jobActionWorkerName.trim() && !jobSubmitting);
+  const canCompleteJob = Boolean(
+    selectedJob &&
+      jobDetail &&
+      jobActionWorkerName.trim() &&
+      jobOutputRows.length > 0 &&
+      jobOutputRows.every(
+        (row) =>
+          row.item_id &&
+          row.quantity > 0 &&
+          ((row.outcome === 'good' || row.outcome === 'rework' || row.outcome === 'hold') ? row.destination_type !== 'none' : true) &&
+          (row.destination_type !== 'storage' || Boolean(row.shelf_slot_id)) &&
+          (row.destination_type !== 'machine' || Boolean(row.machine_id)),
+      ) &&
+      !jobSubmitting,
+  );
+  const availableJobShelves = useMemo(
+    () => jobRackDetail?.shelves
+      .filter((cell) => cell.current_count < cell.capacity)
+      .map((cell) => ({ value: cell.id, label: `${jobRackDetail.code} / R${cell.row_number} / C${cell.column_number} (${cell.capacity - cell.current_count} free)` })) || [],
+    [jobRackDetail],
+  );
 
   useEffect(() => {
     if (!params.id) return;
@@ -140,6 +201,34 @@ export default function MachineDetailPage() {
       setMachines(machinesResponse.data.filter((entry) => entry.id !== params.id));
     });
   }, [moveOpen, params.id]);
+
+  useEffect(() => {
+    if (!jobOpen) {
+      return;
+    }
+
+    void Promise.all([
+      api.getRacks(),
+      api.getMachines(),
+      api.getItems({ page: 1, per_page: 100, sort_by: 'item_code', sort_order: 'asc' }),
+      api.getItems({ page: 2, per_page: 100, sort_by: 'item_code', sort_order: 'asc' }),
+    ]).then(([racksResponse, machinesResponse, firstItems, secondItems]) => {
+      setRacks(racksResponse.data);
+      setMachines(machinesResponse.data.filter((entry) => entry.id !== params.id));
+      const combined = [...firstItems.data, ...secondItems.data];
+      const deduped = new Map(combined.map((item) => [item.id, item]));
+      setOutputCatalog(Array.from(deduped.values()).map((item) => ({ id: item.id, label: `${item.item_code} - ${item.name}` })));
+    });
+  }, [jobOpen, params.id]);
+
+  useEffect(() => {
+    if (!jobOpen || !jobRackId) {
+      setJobRackDetail(null);
+      return;
+    }
+
+    void api.getRack(jobRackId).then((response) => setJobRackDetail(response.data));
+  }, [jobOpen, jobRackId]);
 
   useEffect(() => {
     if (!moveOpen || moveDestinationType !== 'shelf' || !moveRackId) {
@@ -187,6 +276,61 @@ export default function MachineDetailPage() {
 
     const response = await api.getMachine(params.id);
     setMachine(response.data);
+  }
+
+  function openCreateJobDialog() {
+    if (!machine) {
+      return;
+    }
+    setSelectedJobInputIds(machine.items.map((item) => item.assignment_id));
+    setCreateJobWorkerName('');
+    setCreateJobNotes('');
+    setCreateJobOpen(true);
+  }
+
+  async function openJobDialog(job: ProductionJobSummary) {
+    setSelectedJob(job);
+    setJobOpen(true);
+    setJobLoading(true);
+    setJobActionWorkerName('');
+    setJobActionNotes('');
+    setJobRackId('');
+    setJobRackDetail(null);
+    try {
+      const response = await api.getProductionJob(job.id);
+      setJobDetail(response.data);
+      setJobOutputRows(
+        response.data.outputs.length > 0
+          ? response.data.outputs.map((output) => ({
+              key: output.id,
+              item_id: output.item_id,
+              quantity: output.quantity,
+              outcome: output.outcome,
+              destination_type: output.output_type,
+              shelf_slot_id: '',
+              machine_id: '',
+              notes: output.notes || '',
+            }))
+          : [
+              {
+                key: crypto.randomUUID(),
+                item_id: '',
+                quantity: 1,
+                outcome: 'good',
+                destination_type: 'storage',
+                shelf_slot_id: '',
+                machine_id: '',
+                notes: '',
+              },
+            ],
+      );
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to load job', 'error');
+      setJobOpen(false);
+      setSelectedJob(null);
+    } finally {
+      setJobLoading(false);
+    }
   }
 
   function handleSelectImportUnit(unit: TrackingUnit) {
@@ -301,6 +445,112 @@ export default function MachineDetailPage() {
       showToast(err instanceof Error ? err.message : 'Import failed', 'error');
     } finally {
       setImportSubmitting(false);
+    }
+  }
+
+  function updateOutputRow(key: string, patch: Partial<(typeof jobOutputRows)[number]>) {
+    setJobOutputRows((current) => current.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+  }
+
+  function addOutputRow() {
+    setJobOutputRows((current) => [
+      ...current,
+      {
+        key: crypto.randomUUID(),
+        item_id: '',
+        quantity: 1,
+        outcome: 'good',
+        destination_type: 'storage',
+        shelf_slot_id: '',
+        machine_id: '',
+        notes: '',
+      },
+    ]);
+  }
+
+  function removeOutputRow(key: string) {
+    setJobOutputRows((current) => current.filter((row) => row.key !== key));
+  }
+
+  async function handleCreateJob() {
+    if (!machine || !canCreateJob) {
+      showToast('Select at least one input unit and enter worker name', 'error');
+      return;
+    }
+
+    setCreateJobSubmitting(true);
+    try {
+      await api.createProductionJob({
+        machine_id: machine.id,
+        input_assignment_ids: selectedJobInputIds,
+        assigned_by: createJobWorkerName.trim(),
+        notes: createJobNotes || undefined,
+      });
+      await refreshMachine();
+      setCreateJobOpen(false);
+      showToast('Production job created');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to create job', 'error');
+    } finally {
+      setCreateJobSubmitting(false);
+    }
+  }
+
+  async function handleStartJob() {
+    if (!selectedJob || !jobActionWorkerName.trim()) {
+      showToast('Enter worker name to start the job', 'error');
+      return;
+    }
+
+    setJobSubmitting(true);
+    try {
+      await api.startProductionJob(selectedJob.id, { performed_by: jobActionWorkerName.trim() });
+      await refreshMachine();
+      await openJobDialog({ ...selectedJob, status: 'in_progress' });
+      showToast(`Started ${selectedJob.job_code}`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to start job', 'error');
+    } finally {
+      setJobSubmitting(false);
+    }
+  }
+
+  async function handleCompleteJob() {
+    if (!selectedJob || !jobDetail || !jobActionWorkerName.trim()) {
+      showToast('Enter worker name to complete the job', 'error');
+      return;
+    }
+
+    const body: CompleteProductionJobRequest = {
+      completed_by: jobActionWorkerName.trim(),
+      notes: jobActionNotes || undefined,
+      inputs: jobDetail.inputs.map((input) => ({
+        machine_assignment_id: input.machine_assignment_id,
+        consumed_quantity: input.consumed_quantity || input.planned_quantity,
+      })),
+      outputs: jobOutputRows.map((row) => ({
+        item_id: row.item_id,
+        quantity: row.quantity,
+        outcome: row.outcome,
+        destination_type: row.destination_type,
+        shelf_slot_id: row.shelf_slot_id || undefined,
+        machine_id: row.machine_id || undefined,
+        notes: row.notes || undefined,
+      })),
+    };
+
+    setJobSubmitting(true);
+    try {
+      await api.completeProductionJob(selectedJob.id, body);
+      await refreshMachine();
+      setJobOpen(false);
+      setSelectedJob(null);
+      setJobDetail(null);
+      showToast(`Completed ${selectedJob.job_code}`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to complete job', 'error');
+    } finally {
+      setJobSubmitting(false);
     }
   }
 
@@ -450,8 +700,8 @@ export default function MachineDetailPage() {
         <Grid size={{ xs: 6, md: 3 }}>
           <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
             <CheckCircleIcon sx={{ color: 'success.main', mb: 0.5 }} />
-            <Typography variant="h2">{machine.stats.completed_assignments}</Typography>
-            <Typography variant="caption" color="text.secondary">Completed jobs</Typography>
+            <Typography variant="h2">{machine.jobs.filter((job) => job.status === 'completed').length}</Typography>
+            <Typography variant="caption" color="text.secondary">Completed production jobs</Typography>
           </Paper>
         </Grid>
         <Grid size={{ xs: 6, md: 3 }}>
@@ -475,7 +725,10 @@ export default function MachineDetailPage() {
             <CardContent>
               <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
                 <Typography variant="subtitle1">Items being processed</Typography>
-                <Typography variant="caption" color="text.secondary">{machine.items.length} items</Typography>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Typography variant="caption" color="text.secondary">{machine.items.length} items</Typography>
+                  {machine.items.length > 0 ? <Button variant="secondary" onClick={openCreateJobDialog}>Create job</Button> : null}
+                </Stack>
               </Stack>
 
               {machine.items.length === 0 ? (
@@ -544,6 +797,33 @@ export default function MachineDetailPage() {
           <Card sx={{ height: '100%' }}>
             <CardContent>
               <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
+                <Typography variant="subtitle1">Production jobs</Typography>
+                <Typography variant="caption" color="text.secondary">{machine.jobs.length} jobs</Typography>
+              </Stack>
+
+              {machine.jobs.length === 0 ? (
+                <EmptyState title="No jobs yet" description="Create a production job from the units currently assigned to this machine." />
+              ) : (
+                <Stack spacing={1.5} mb={3}>
+                  {machine.jobs.map((job) => (
+                    <Paper key={job.id} variant="outlined" sx={{ p: 1.5 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
+                        <Box>
+                          <Typography variant="body2" fontFamily="monospace" fontWeight={600}>{job.job_code}</Typography>
+                          <Typography variant="caption" color="text.secondary">{job.input_count} inputs • {job.output_count} outputs</Typography>
+                          {job.result_summary ? <Typography variant="caption" color="text.secondary" display="block">{job.result_summary}</Typography> : null}
+                        </Box>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <Badge variant={job.status === 'completed' ? 'success' : job.status === 'in_progress' ? 'primary' : 'default'}>{job.status}</Badge>
+                          <Button variant="secondary" onClick={() => void openJobDialog(job)}>Open</Button>
+                        </Stack>
+                      </Stack>
+                    </Paper>
+                  ))}
+                </Stack>
+              )}
+
+              <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
                 <Typography variant="subtitle1">Recent activity</Typography>
                 <Typography variant="caption" color="text.secondary">{machine.activity.length} entries</Typography>
               </Stack>
@@ -580,6 +860,242 @@ export default function MachineDetailPage() {
           </Card>
         </Grid>
       </Grid>
+
+      <Modal
+        open={createJobOpen}
+        title={`Create production job for ${machine.code}`}
+        confirmLabel={createJobSubmitting ? 'Creating...' : 'Create job'}
+        confirmDisabled={!canCreateJob}
+        onConfirm={handleCreateJob}
+        onClose={() => setCreateJobOpen(false)}
+      >
+        <Stack spacing={2.5} pt={0.5}>
+          <Paper variant="outlined" sx={{ maxHeight: 360, overflow: 'auto' }}>
+            <Box px={2} py={1.5} borderBottom={1} borderColor="divider">
+              <Typography variant="subtitle2">Input units</Typography>
+            </Box>
+            {machine.items.length === 0 ? (
+              <Box px={2} py={2}><Typography variant="body2" color="text.secondary">No machine units available.</Typography></Box>
+            ) : (
+              <Stack divider={<Divider />}>
+                {machine.items.map((item) => {
+                  const checked = selectedJobInputIds.includes(item.assignment_id);
+                  return (
+                    <Box key={item.assignment_id} px={2} py={1.5}>
+                      <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                        <Checkbox
+                          checked={checked}
+                          onChange={() =>
+                            setSelectedJobInputIds((current) =>
+                              checked ? current.filter((id) => id !== item.assignment_id) : [...current, item.assignment_id],
+                            )
+                          }
+                        />
+                        <Box>
+                          <Typography variant="body2" fontWeight={600}>{item.item_code}</Typography>
+                          <Typography variant="caption" color="text.secondary" fontFamily="monospace">{item.unit_code}</Typography>
+                          <Typography variant="body2">{item.item_name}</Typography>
+                          <Typography variant="caption" color="text.secondary">{item.quantity} pcs</Typography>
+                        </Box>
+                      </Stack>
+                    </Box>
+                  );
+                })}
+              </Stack>
+            )}
+          </Paper>
+
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Input label="Worker name" value={createJobWorkerName} onChange={(event) => setCreateJobWorkerName(event.target.value)} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField
+                label="Notes"
+                value={createJobNotes}
+                onChange={(event) => setCreateJobNotes(event.target.value)}
+                multiline
+                minRows={2}
+                fullWidth
+                placeholder="Setup notes, intended output, batching context, etc."
+              />
+            </Grid>
+          </Grid>
+        </Stack>
+      </Modal>
+
+      <Modal
+        open={jobOpen}
+        title={selectedJob ? `Production job ${selectedJob.job_code}` : 'Production job'}
+        confirmLabel={
+          jobSubmitting
+            ? selectedJob?.status === 'draft'
+              ? 'Starting...'
+              : 'Completing...'
+            : selectedJob?.status === 'draft'
+              ? 'Start job'
+              : 'Complete job'
+        }
+        confirmDisabled={selectedJob?.status === 'draft' ? !canStartJob : !canCompleteJob}
+        onConfirm={selectedJob?.status === 'draft' ? handleStartJob : handleCompleteJob}
+        onClose={() => setJobOpen(false)}
+      >
+        <Stack spacing={2.5} pt={0.5}>
+          {jobLoading || !jobDetail ? (
+            <Stack direction="row" spacing={1} alignItems="center">
+              <LoadingSpinner />
+              <Typography variant="body2" color="text.secondary">Loading production job...</Typography>
+            </Stack>
+          ) : (
+            <>
+              <Paper variant="outlined" sx={{ p: 2 }}>
+                <Stack direction="row" spacing={1} alignItems="center" mb={1}>
+                  <Typography variant="subtitle2">{jobDetail.job_code}</Typography>
+                  <Badge variant={jobDetail.status === 'completed' ? 'success' : jobDetail.status === 'in_progress' ? 'primary' : 'default'}>{jobDetail.status}</Badge>
+                </Stack>
+                <Typography variant="caption" color="text.secondary">{jobDetail.input_count} inputs • {jobDetail.output_count} outputs</Typography>
+                {jobDetail.notes ? <Typography variant="body2" mt={1}>{jobDetail.notes}</Typography> : null}
+              </Paper>
+
+              <Paper variant="outlined" sx={{ maxHeight: 280, overflow: 'auto' }}>
+                <Box px={2} py={1.5} borderBottom={1} borderColor="divider">
+                  <Typography variant="subtitle2">Inputs</Typography>
+                </Box>
+                <Stack divider={<Divider />}>
+                  {jobDetail.inputs.map((input) => (
+                    <Box key={input.id} px={2} py={1.5}>
+                      <Typography variant="body2" fontWeight={600}>{input.item_code}</Typography>
+                      <Typography variant="caption" color="text.secondary" fontFamily="monospace">{input.unit_code}</Typography>
+                      <Typography variant="body2">{input.item_name}</Typography>
+                      <Grid container spacing={2} mt={0.5}>
+                        <Grid size={{ xs: 12, md: 4 }}>
+                          <Input
+                            label={`Consumed quantity (max ${input.available_quantity || input.planned_quantity})`}
+                            type="number"
+                            value={String(input.consumed_quantity || input.planned_quantity)}
+                            onChange={(event) => {
+                              const value = Math.max(1, Math.min(input.available_quantity || input.planned_quantity, Number(event.target.value) || 1));
+                              setJobDetail((current) => current ? {
+                                ...current,
+                                inputs: current.inputs.map((entry) => entry.id === input.id ? { ...entry, consumed_quantity: value } : entry),
+                              } : current);
+                            }}
+                          />
+                        </Grid>
+                        <Grid size={{ xs: 12, md: 8 }}>
+                          <Typography variant="caption" color="text.secondary">Available: {input.available_quantity || input.planned_quantity} pcs • Unit {input.unit_code}</Typography>
+                        </Grid>
+                      </Grid>
+                    </Box>
+                  ))}
+                </Stack>
+              </Paper>
+
+              <Paper variant="outlined" sx={{ p: 2 }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.5}>
+                  <Typography variant="subtitle2">Outputs</Typography>
+                  <Button variant="secondary" onClick={addOutputRow}>Add output</Button>
+                </Stack>
+                {jobOutputRows.some((row) => row.destination_type === 'storage') ? (
+                  <Grid container spacing={2} mb={2}>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Select
+                        label="Storage output rack"
+                        value={jobRackId}
+                        onChange={(event) => {
+                          setJobRackId(event.target.value);
+                          setJobOutputRows((current) => current.map((row) => row.destination_type === 'storage' ? { ...row, shelf_slot_id: '' } : row));
+                        }}
+                        options={[{ value: '', label: 'Select rack' }, ...racks.map((rack) => ({ value: rack.id, label: `${rack.code} - ${rack.label}` }))]}
+                      />
+                    </Grid>
+                  </Grid>
+                ) : null}
+                <Stack spacing={2}>
+                  {jobOutputRows.map((row, index) => (
+                    <Paper key={row.key} variant="outlined" sx={{ p: 1.5, bgcolor: 'grey.50' }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
+                        <Typography variant="caption" color="text.secondary">Output {index + 1}</Typography>
+                        {jobOutputRows.length > 1 ? <Button variant="secondary" onClick={() => removeOutputRow(row.key)}>Remove</Button> : null}
+                      </Stack>
+                      <Grid container spacing={2}>
+                        <Grid size={{ xs: 12, md: 6 }}>
+                          <Select
+                            label="Output item"
+                            value={row.item_id}
+                            onChange={(event) => updateOutputRow(row.key, { item_id: event.target.value })}
+                            options={[{ value: '', label: 'Select item' }, ...outputCatalog.map((item) => ({ value: item.id, label: item.label }))]}
+                          />
+                        </Grid>
+                        <Grid size={{ xs: 12, md: 2 }}>
+                          <Input label="Quantity" type="number" value={String(row.quantity)} onChange={(event) => updateOutputRow(row.key, { quantity: Math.max(1, Number(event.target.value) || 1) })} />
+                        </Grid>
+                        <Grid size={{ xs: 12, md: 4 }}>
+                          <Select
+                            label="Outcome"
+                            value={row.outcome}
+                            onChange={(event) => updateOutputRow(row.key, { outcome: event.target.value as typeof row.outcome })}
+                            options={[
+                              { value: 'good', label: 'Good output' },
+                              { value: 'scrap', label: 'Scrap' },
+                              { value: 'rework', label: 'Rework' },
+                              { value: 'hold', label: 'Hold' },
+                            ]}
+                          />
+                        </Grid>
+                        <Grid size={{ xs: 12, md: 4 }}>
+                          <Select
+                            label="Destination"
+                            value={row.destination_type}
+                            onChange={(event) => updateOutputRow(row.key, { destination_type: event.target.value as typeof row.destination_type, shelf_slot_id: '', machine_id: '' })}
+                            options={[
+                              { value: 'storage', label: 'Storage cell' },
+                              { value: 'machine', label: 'Machine' },
+                              { value: 'none', label: 'No destination' },
+                            ]}
+                          />
+                        </Grid>
+                        {row.destination_type === 'storage' ? (
+                          <Grid size={{ xs: 12, md: 4 }}>
+                            <Select
+                              label="Storage cell"
+                              value={row.shelf_slot_id}
+                              onChange={(event) => updateOutputRow(row.key, { shelf_slot_id: event.target.value })}
+                              options={[{ value: '', label: jobRackId ? 'Select cell' : 'Choose rack first' }, ...availableJobShelves]}
+                            />
+                          </Grid>
+                        ) : null}
+                        {row.destination_type === 'machine' ? (
+                          <Grid size={{ xs: 12, md: 4 }}>
+                            <Select
+                              label="Destination machine"
+                              value={row.machine_id}
+                              onChange={(event) => updateOutputRow(row.key, { machine_id: event.target.value })}
+                              options={[{ value: '', label: 'Select machine' }, ...machines.map((entry) => ({ value: entry.id, label: `${entry.code} - ${entry.name}` }))]}
+                            />
+                          </Grid>
+                        ) : null}
+                        <Grid size={{ xs: 12, md: 12 }}>
+                          <TextField label="Notes" value={row.notes} onChange={(event) => updateOutputRow(row.key, { notes: event.target.value })} multiline minRows={2} fullWidth />
+                        </Grid>
+                      </Grid>
+                    </Paper>
+                  ))}
+                </Stack>
+              </Paper>
+
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 12, md: 4 }}>
+                  <Input label="Worker name" value={jobActionWorkerName} onChange={(event) => setJobActionWorkerName(event.target.value)} />
+                </Grid>
+                <Grid size={{ xs: 12, md: 8 }}>
+                  <TextField label="Job notes" value={jobActionNotes} onChange={(event) => setJobActionNotes(event.target.value)} multiline minRows={2} fullWidth />
+                </Grid>
+              </Grid>
+            </>
+          )}
+        </Stack>
+      </Modal>
 
       <Modal
         open={moveOpen}

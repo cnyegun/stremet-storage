@@ -53,10 +53,10 @@ exports.machinesRouter.get('/:id', (0, asyncHandler_1.asyncHandler)(async (req, 
     SELECT al.*, i.item_code, i.name AS item_name
     FROM activity_log al
     JOIN items i ON al.item_id = i.id
-    WHERE al.from_location = $1 OR al.to_location = $1
+    WHERE al.from_location = $1 OR al.to_location = $1 OR al.machine_id = $2
     ORDER BY al.created_at DESC
     LIMIT 30
-  `, [`M/${machine.code}`]);
+  `, [`M/${machine.code}`, id]);
     // Stats
     const statsResult = await pool_1.default.query(`
     SELECT
@@ -67,10 +67,31 @@ exports.machinesRouter.get('/:id', (0, asyncHandler_1.asyncHandler)(async (req, 
     FROM machine_assignments
     WHERE machine_id = $1
   `, [id]);
+    const jobsResult = await pool_1.default.query(`
+    SELECT pj.*, m.code AS machine_code, m.name AS machine_name,
+      COALESCE(input_counts.input_count, 0)::int AS input_count,
+      COALESCE(output_counts.output_count, 0)::int AS output_count
+    FROM production_jobs pj
+    JOIN machines m ON pj.machine_id = m.id
+    LEFT JOIN (
+      SELECT production_job_id, COUNT(*)::int AS input_count
+      FROM production_job_inputs
+      GROUP BY production_job_id
+    ) input_counts ON input_counts.production_job_id = pj.id
+    LEFT JOIN (
+      SELECT production_job_id, COUNT(*)::int AS output_count
+      FROM production_job_outputs
+      GROUP BY production_job_id
+    ) output_counts ON output_counts.production_job_id = pj.id
+    WHERE pj.machine_id = $1
+    ORDER BY pj.created_at DESC
+    LIMIT 20
+  `, [id]);
     res.json({
         data: {
             ...machine,
             items: itemsResult.rows,
+            jobs: jobsResult.rows,
             activity: activityResult.rows,
             stats: statsResult.rows[0],
         },

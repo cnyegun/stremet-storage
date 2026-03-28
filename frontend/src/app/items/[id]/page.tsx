@@ -328,6 +328,33 @@ export default function ItemDetailPage() {
         </Grid>
       </Grid>
 
+      <Card>
+        <CardContent>
+          <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
+            <Typography variant="subtitle1">Production history</Typography>
+            <Typography variant="caption" color="text.secondary">{item.production_history.length} entries</Typography>
+          </Stack>
+
+          {item.production_history.length === 0 ? (
+            <EmptyState title="No production history" description="This item has not yet been consumed or produced through a tracked production job." />
+          ) : (
+            <Stack divider={<Divider />}>
+              {item.production_history.map((entry) => (
+                <Box key={`${entry.job_id}-${entry.role}-${entry.unit_code}`} py={1.5}>
+                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                    <Badge variant={entry.role === 'output' ? 'success' : 'warning'}>{entry.role === 'output' ? 'Produced' : 'Consumed'}</Badge>
+                    <Typography variant="caption" fontFamily="monospace">{entry.job_code}</Typography>
+                    <Typography variant="caption" color="text.secondary">{formatDateTime(entry.completed_at || entry.created_at)}</Typography>
+                  </Stack>
+                  <Typography variant="body2" mt={0.5}>{entry.machine_name} ({entry.machine_code})</Typography>
+                  <Typography variant="caption" color="text.secondary" display="block">Unit {entry.unit_code} • {entry.quantity} pcs • {entry.outcome}</Typography>
+                </Box>
+              ))}
+            </Stack>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Move dialog */}
       <Modal open={moveOpen} title="Move item" confirmLabel={submitting ? 'Moving...' : 'Confirm move'} onConfirm={handleMove} onClose={() => setMoveOpen(false)}>
         <Stack spacing={2.5} pt={1}>
