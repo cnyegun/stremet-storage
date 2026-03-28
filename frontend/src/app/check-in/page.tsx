@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
@@ -149,7 +150,12 @@ export default function CheckInPage() {
 
   return (
     <Stack spacing={2.5}>
-      <Typography variant="h3">Check in item</Typography>
+      <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} spacing={1}>
+        <Typography variant="h3">Check in item</Typography>
+        <Link href="/scan" style={{ fontSize: 13, color: '#1565C0' }}>
+          Scan QR with camera
+        </Link>
+      </Stack>
 
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stepper activeStep={getActiveStep(flow)} alternativeLabel>

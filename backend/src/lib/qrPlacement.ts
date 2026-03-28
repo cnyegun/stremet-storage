@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import { buildRackLocationCode } from './rackCells';
+import { extractQrToken } from './qrLinks';
 
 type PlacementResult = {
   shelf_slot_id: string;
@@ -16,13 +17,17 @@ type ItemRecord = {
   item_code: string;
   name: string;
   customer_name: string | null;
+  customer_id: string | null;
+  order_number: string | null;
+  created_at: string;
   type: string;
   quantity: number;
 };
 
 export async function resolveItemForQr(client: PoolClient, qrCode: string): Promise<ItemRecord | null> {
+  const qrToken = extractQrToken(qrCode);
   const qrMatch = await client.query<ItemRecord>(`
-    SELECT i.id, i.item_code, i.name, c.name AS customer_name, i.type, i.quantity
+    SELECT i.id, i.item_code, i.name, c.name AS customer_name, i.customer_id, i.order_number, i.created_at, i.type, i.quantity
     FROM qr_entities qe
     JOIN items i ON i.id = qe.item_id
     LEFT JOIN customers c ON c.id = i.customer_id
@@ -30,22 +35,28 @@ export async function resolveItemForQr(client: PoolClient, qrCode: string): Prom
       AND qe.qr_type = 'product'
     ORDER BY CASE WHEN qe.status = 'active' THEN 0 ELSE 1 END, qe.created_at DESC
     LIMIT 1
-  `, [qrCode]);
+  `, [qrToken]);
 
   if (qrMatch.rows.length > 0) return qrMatch.rows[0];
 
   const itemMatch = await client.query<ItemRecord>(`
-    SELECT i.id, i.item_code, i.name, c.name AS customer_name, i.type, i.quantity
+    SELECT i.id, i.item_code, i.name, c.name AS customer_name, i.customer_id, i.order_number, i.created_at, i.type, i.quantity
     FROM items i
     LEFT JOIN customers c ON c.id = i.customer_id
     WHERE i.item_code = $1 OR i.order_number = $1
     LIMIT 1
-  `, [qrCode]);
+  `, [qrToken]);
 
   return itemMatch.rows[0] || null;
 }
 
-export async function findNearestShelfSlot(client: PoolClient, itemType: string, preferredRackId?: string | null, preferredShelfSlotId?: string | null): Promise<PlacementResult | null> {
+export async function findNearestShelfSlot(
+  client: PoolClient,
+  itemType: string,
+  preferredRackId?: string | null,
+  preferredShelfSlotId?: string | null,
+  customerId?: string | null,
+): Promise<PlacementResult | null> {
   const preferredRack = preferredRackId ? await client.query(`SELECT id, display_order, rack_type FROM racks WHERE id = $1`, [preferredRackId]) : { rows: [] as Array<{ id: string; display_order: number; rack_type: string }> };
   const preferredSlot = preferredShelfSlotId ? await client.query(`SELECT id, rack_id, row_number, column_number FROM shelf_slots WHERE id = $1`, [preferredShelfSlotId]) : { rows: [] as Array<{ id: string; rack_id: string; row_number: number; column_number: number }> };
 
@@ -62,13 +73,22 @@ export async function findNearestShelfSlot(client: PoolClient, itemType: string,
       (CASE WHEN r.id = $1 THEN 0 ELSE 1 END) AS rack_priority,
       ABS(COALESCE(r.display_order, 0) - COALESCE($2::int, r.display_order)) AS display_distance,
       ABS(COALESCE(ss.row_number, 0) - COALESCE($3::int, ss.row_number)) + ABS(COALESCE(ss.column_number, 0) - COALESCE($4::int, ss.column_number)) AS cell_distance,
-      CASE WHEN r.rack_type = $5 THEN 0 ELSE 1 END AS rack_type_penalty
+      CASE WHEN r.rack_type = $5 THEN 0 ELSE 1 END AS rack_type_penalty,
+      COALESCE((
+        SELECT COUNT(*)::int
+        FROM storage_assignments sa2
+        JOIN items i2 ON i2.id = sa2.item_id
+        JOIN shelf_slots ss2 ON ss2.id = sa2.shelf_slot_id
+        WHERE sa2.checked_out_at IS NULL
+          AND ss2.rack_id = r.id
+          AND i2.customer_id = $6
+      ), 0) AS same_customer_count
     FROM shelf_slots ss
     JOIN racks r ON r.id = ss.rack_id
     WHERE ss.current_count < ss.capacity
-    ORDER BY rack_priority ASC, rack_type_penalty ASC, display_distance ASC, cell_distance ASC, r.display_order ASC, ss.row_number ASC, ss.column_number ASC
+    ORDER BY rack_priority ASC, rack_type_penalty ASC, same_customer_count DESC, display_distance ASC, cell_distance ASC, r.display_order ASC, ss.row_number ASC, ss.column_number ASC
     LIMIT 1
-  `, [targetRackId, targetDisplayOrder, targetRow, targetColumn, targetRackType]);
+  `, [targetRackId, targetDisplayOrder, targetRow, targetColumn, targetRackType, customerId || null]);
 
   if (result.rows.length === 0) return null;
 

@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import pool from '../db/pool';
 import { buildPlacementLabel, findNearestShelfSlot } from './qrPlacement';
 import { buildAssemblyCode, getExistingTrackingUnitCodes } from './qrCodes';
+import { buildQrScanUrl, extractQrToken } from './qrLinks';
 import { ensureOrderFulfillment, incrementFulfillment, retireAssemblyState, retireProductQrEntities, upsertQrEntity } from './qrState';
 import { loadAssemblySources } from './qrAssemblySources';
 
@@ -32,7 +33,7 @@ export async function processAssemblyQrCompile(input: AssemblyCompileInput) {
 
     const existingCodes = await getExistingTrackingUnitCodes(client);
     const assemblyCode = buildAssemblyCode(first.item_code, existingCodes);
-    const finalAssemblyQr = assembly_qr_code || assemblyCode;
+    const finalAssemblyQr = extractQrToken(assembly_qr_code || assemblyCode);
     const assemblyBatchId = uuidv4();
     const locationCode = buildPlacementLabel(placement);
 
@@ -103,6 +104,7 @@ export async function processAssemblyQrCompile(input: AssemblyCompileInput) {
       assembly_batch_id: assemblyBatchId,
       assembly_code: assemblyCode,
       qr_code: finalAssemblyQr,
+      scan_url: buildQrScanUrl(finalAssemblyQr),
       quantity: totalQuantity,
       location_code: locationCode,
       rerouted: placement.rerouted,

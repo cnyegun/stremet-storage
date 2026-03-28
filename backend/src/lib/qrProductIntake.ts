@@ -6,6 +6,7 @@ import {
   resolveItemForQr,
 } from './qrPlacement';
 import { createStorageAssignmentFromQr } from './qrCodes';
+import { buildQrScanUrl, extractQrToken } from './qrLinks';
 import { ensureOrderFulfillment, upsertQrEntity } from './qrState';
 
 type ProductIntakeInput = {
@@ -19,6 +20,7 @@ type ProductIntakeInput = {
 
 type ProductIntakeResult = {
   qr_code: string;
+  scan_url: string;
   unit_code: string;
   assignment_id: string;
   location_code: string;
@@ -32,8 +34,9 @@ type ProductIntakeResult = {
 
 export async function processProductQrIntake(input: ProductIntakeInput): Promise<ProductIntakeResult> {
   const { qr_code, preferred_rack_id, preferred_shelf_slot_id, quantity, performed_by, notes } = input;
+  const qrToken = qr_code ? extractQrToken(qr_code) : '';
 
-  if (!qr_code || !performed_by) {
+  if (!qrToken || !performed_by) {
     throw httpError(400, 'qr_code and performed_by are required');
   }
 
@@ -41,12 +44,18 @@ export async function processProductQrIntake(input: ProductIntakeInput): Promise
   try {
     await client.query('BEGIN');
 
-    const item = await resolveItemForQr(client, qr_code);
+    const item = await resolveItemForQr(client, qrToken);
     if (!item) {
       throw httpError(404, 'No item matches this product QR code');
     }
 
-    const placement = await findNearestShelfSlot(client, item.type, preferred_rack_id || null, preferred_shelf_slot_id || null);
+    const placement = await findNearestShelfSlot(
+      client,
+      item.type,
+      preferred_rack_id || null,
+      preferred_shelf_slot_id || null,
+      item.customer_id,
+    );
     if (!placement) {
       throw httpError(400, 'No empty storage space is available');
     }
@@ -62,7 +71,7 @@ export async function processProductQrIntake(input: ProductIntakeInput): Promise
     });
 
     await upsertQrEntity(client, {
-      qr_code,
+      qr_code: qrToken,
       qr_type: 'product',
       item_id: item.id,
       storage_assignment_id: assignmentId,
@@ -85,6 +94,7 @@ export async function processProductQrIntake(input: ProductIntakeInput): Promise
         notes || null,
         JSON.stringify({
           qr_code,
+          qr_token: qrToken,
           rerouted: placement.rerouted,
           preferred_rack_id: preferred_rack_id || null,
           preferred_shelf_slot_id: preferred_shelf_slot_id || null,
@@ -107,7 +117,8 @@ export async function processProductQrIntake(input: ProductIntakeInput): Promise
     await client.query('COMMIT');
 
     return {
-      qr_code,
+      qr_code: qrToken,
+      scan_url: buildQrScanUrl(qrToken),
       unit_code: unitCode,
       assignment_id: assignmentId,
       location_code: locationCode,
