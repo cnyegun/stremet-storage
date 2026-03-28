@@ -1,17 +1,14 @@
-import type { RackWithShelves, RackWithStats } from '@shared/types';
+import type { RackWithShelves, RackWithStats, WarehouseStats } from '@shared/types';
 import { api } from '@/lib/api';
 import type { MapCell, MapRack, WarehouseMapData } from './types';
 
 function toNumber(value: number | string | null | undefined) {
-  if (value === null || value === undefined) {
-    return 0;
-  }
-
+  if (value === null || value === undefined) return 0;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function mapCellItems(items: RackWithShelves['shelves'][number]['items']) {
+function mapCellItems(items: any[]) {
   return items.map((item) => ({
     id: item.assignment_id,
     assignment_id: item.assignment_id,
@@ -69,23 +66,19 @@ function mapRackSummary(rack: RackWithStats): MapRack {
   };
 }
 
-function buildStats(racks: MapRack[]): WarehouseMapData['stats'] {
-  const totalSlots = racks.reduce((sum, rack) => sum + (rack.row_count * rack.column_count), 0);
-  const occupiedSlots = racks.reduce((sum, rack) => sum + rack.cells_in_use, 0);
-  const totalVolumeStored = racks.reduce((sum, rack) => sum + rack.occupancy_used, 0);
-
+function buildStats(stats: WarehouseStats): WarehouseMapData['stats'] {
   return {
-    total_items_stored: totalVolumeStored, // Using volume as the primary "stored" metric
-    total_slots: totalSlots,
-    occupied_slots: occupiedSlots,
-    available_slots: totalSlots - occupiedSlots,
+    total_items_stored: toNumber(stats.total_volume_stored),
+    total_slots: toNumber(stats.total_slots),
+    occupied_slots: toNumber(stats.slots_in_use),
+    available_slots: toNumber(stats.total_slots - stats.slots_in_use),
   };
 }
 
 export async function getWarehouseMapData(): Promise<WarehouseMapData> {
-  const racksResponse = await api.getRacks();
+  const statsRes = await api.getStats();
   const rackDetails = await Promise.all(
-    racksResponse.data.map(async (rack) => {
+    statsRes.data.racks.map(async (rack) => {
       try {
         const detailResponse = await api.getRack(rack.id);
         return mapRackFromDetail(detailResponse.data);
@@ -97,7 +90,7 @@ export async function getWarehouseMapData(): Promise<WarehouseMapData> {
 
   return {
     racks: rackDetails,
-    stats: buildStats(rackDetails),
+    stats: buildStats(statsRes.data),
   };
 }
 

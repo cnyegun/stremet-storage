@@ -18,7 +18,7 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '4000', 10);
 
 app.use(cors({
-  origin: [process.env.CORS_ORIGIN || 'http://localhost:3000', 'http://127.0.0.1:3000'],
+  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
 }));
 app.use(express.json());

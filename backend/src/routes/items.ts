@@ -7,6 +7,7 @@ import { OptimizerService } from '../services/optimizerService';
 import {
   getNextTrackingUnitCode,
   getExistingTrackingUnitCodes,
+  buildTrackingUnitMoveNote,
 } from '../lib/trackingUnits';
 import { buildRackLocationCode } from '../lib/rackCells';
 import { getDefaultMachineAssignmentStatus } from '../lib/machineAssignmentStatus';
@@ -97,18 +98,16 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
   });
 }));
 
-// GET /api/items/:id/suggest-location — smart volumetric location suggestion
+// GET /api/items/:id/suggest-location
 itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
   const { id } = req.params;
-
   const itemResult = await pool.query('SELECT * FROM items WHERE id = $1', [id]);
   if (itemResult.rows.length === 0) { res.status(404).json({ error: 'Item not found' }); return; }
   const item = itemResult.rows[0];
 
   const slotsResult = await pool.query(`
     SELECT ss.*, r.code as rack_code, r.display_order, r.position_x, r.position_y
-    FROM shelf_slots ss
-    JOIN racks r ON ss.rack_id = r.id
+    FROM shelf_slots ss JOIN racks r ON ss.rack_id = r.id
     WHERE (ss.max_volume_m3 - ss.current_volume_m3) >= ($1 * $2)
   `, [item.quantity, item.volume_m3 || 0.1]);
 
@@ -193,6 +192,12 @@ itemsRouter.post('/check-in', asyncHandler(async (req, res) => {
       [weightToAdd, incomingVolume, shelf_slot_id]
     );
 
+    await client.query(
+      `INSERT INTO activity_log (id, item_id, action, to_location, performed_by, notes)
+       VALUES ($1, $2, 'check_in', $3, $4, $5)`,
+      [uuidv4(), item_id, `Stored in Cell ${shelf_slot_id}`, checked_in_by, notes || 'Initial check-in']
+    );
+
     await client.query('COMMIT');
     res.json({ data: { unit_code: unitCode, location: 'Stored' } });
   } catch (e: any) {
@@ -255,6 +260,12 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
             [uuidv4(), assignment.item_id, to_machine_id, assignment.unit_code, getDefaultMachineAssignmentStatus(), moveQty, performed_by]
         );
     }
+
+    await client.query(
+      `INSERT INTO activity_log (id, item_id, action, from_location, to_location, performed_by, notes)
+       VALUES ($1, $2, 'move', $3, $4, $5, $6)`,
+      [uuidv4(), assignment.item_id, source_type, to_shelf_slot_id ? 'Storage' : 'Machine', performed_by, buildTrackingUnitMoveNote(moveQty, assignment.quantity, notes)]
+    );
 
     await client.query('COMMIT');
     res.json({ data: { unit_code: assignment.unit_code, to: to_shelf_slot_id ? 'Storage' : 'Machine' } });

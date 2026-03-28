@@ -38,7 +38,7 @@ export interface MapRack {
 }
 
 export interface MapStatsData {
-  total_items_stored: number;
+  total_volume_stored: number;
   total_slots: number;
   occupied_slots: number;
   available_slots: number;
