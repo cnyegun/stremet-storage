@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { processAssemblyQrCompile } from '../lib/qrAssemblyCompile';
 import { processProductQrIntake } from '../lib/qrProductIntake';
 
 export const qrLifecycleRouter = Router();
@@ -7,6 +8,15 @@ export const qrLifecycleRouter = Router();
 qrLifecycleRouter.post('/product-intake', asyncHandler(async (req, res) => {
   try {
     const result = await processProductQrIntake(req.body);
+    res.status(201).json({ data: result });
+  } catch (error) {
+    handleRouteError(res, error);
+  }
+}));
+
+qrLifecycleRouter.post('/assembly-compile', asyncHandler(async (req, res) => {
+  try {
+    const result = await processAssemblyQrCompile(req.body);
     res.status(201).json({ data: result });
   } catch (error) {
     handleRouteError(res, error);
