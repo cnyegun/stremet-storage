@@ -5,7 +5,7 @@
 
 // --- Enums ---
 
-export type ItemType = 'customer_order' | 'general_stock' | 'raw_material' | 'work_in_progress';
+export type ItemType = 'customer_order' | 'general_stock';
 
 export type ActionType = 'check_in' | 'check_out' | 'move' | 'note_added';
 
@@ -42,18 +42,12 @@ export interface ShelfSlot {
   shelf_number: number;
   row_number: number;
   column_number: number;
-  capacity: number;
   width_m: number;
   depth_m: number;
   height_m: number;
   max_volume_m3: number;
   current_volume_m3: number;
   current_count: number;
-  max_length?: number;
-  max_width?: number;
-  max_height?: number;
-  max_weight_kg?: number;
-  current_weight_kg?: number;
   created_at: string;
   updated_at: string;
 }
@@ -202,7 +196,6 @@ export interface RackCellItem {
   item_name: string;
   customer_name: string | null;
   material: string;
-  volume_m3?: number;
   quantity: number;
   checked_in_at: string;
   checked_in_by: string;

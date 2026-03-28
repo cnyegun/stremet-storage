@@ -81,8 +81,8 @@ export default function CheckInPage() {
   const manualShelfOptions = useMemo(
     () =>
       rackDetail?.shelves
-        .filter((cell) => cell.current_count < cell.capacity && cell.current_volume_m3 < cell.max_volume_m3)
-        .map((cell) => ({ value: cell.id, label: `${rackDetail.code} / R${cell.row_number} / C${cell.column_number} (${(cell.max_volume_m3 - cell.current_volume_m3).toFixed(1)} m³ free)` })) || [],
+        .filter((cell) => cell.current_count < cell.capacity)
+        .map((cell) => ({ value: cell.id, label: `${rackDetail.code} / R${cell.row_number} / C${cell.column_number} (${cell.capacity - cell.current_count} free)` })) || [],
     [rackDetail],
   );
 
@@ -223,7 +223,7 @@ export default function CheckInPage() {
                 <Grid size={{ xs: 12, md: 6 }}><Input label="Name" value={newItem.name} onChange={(e: any) => setNewItem((c) => ({ ...c, name: e.target.value }))} /></Grid>
                 <Grid size={{ xs: 12, md: 6 }}><Select label="Customer" value={newItem.customer_id || ''} onChange={(e: any) => setNewItem((c) => ({ ...c, customer_id: e.target.value || undefined }))} options={[{ label: 'No customer', value: '' }, ...customers.map((c) => ({ label: c.name, value: c.id }))]} /></Grid>
                 <Grid size={{ xs: 12, md: 6 }}><Input label="Material" value={newItem.material} onChange={(e: any) => setNewItem((c) => ({ ...c, material: e.target.value }))} /></Grid>
-                 <Grid size={{ xs: 12, md: 6 }}><Select label="Type" value={newItem.type} onChange={(e: any) => setNewItem((c) => ({ ...c, type: e.target.value as CreateItemRequest['type'] }))} options={[{ label: 'Customer order', value: 'customer_order' }, { label: 'General stock', value: 'general_stock' }, { label: 'Raw material', value: 'raw_material' }, { label: 'Work in progress', value: 'work_in_progress' }]} /></Grid>
+                <Grid size={{ xs: 12, md: 6 }}><Select label="Type" value={newItem.type} onChange={(e: any) => setNewItem((c) => ({ ...c, type: e.target.value as CreateItemRequest['type'] }))} options={[{ label: 'Customer order', value: 'customer_order' }, { label: 'General stock', value: 'general_stock' }]} /></Grid>
                 <Grid size={{ xs: 12, md: 3 }}><Input label="Dimensions" value={newItem.dimensions || ''} onChange={(e: any) => setNewItem((c) => ({ ...c, dimensions: e.target.value }))} /></Grid>
                 <Grid size={{ xs: 12, md: 3 }}><Input label="Weight (kg)" type="number" value={newItem.weight_kg || ''} onChange={(e: any) => setNewItem((c) => ({ ...c, weight_kg: Number(e.target.value) || 0 }))} /></Grid>
                 <Grid size={{ xs: 12, md: 3 }}><Input label="Order number" value={newItem.order_number || ''} onChange={(e: any) => setNewItem((c) => ({ ...c, order_number: e.target.value }))} /></Grid>

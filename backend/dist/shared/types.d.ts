@@ -1,10 +1,24 @@
-export type ItemType = 'customer_order' | 'general_stock' | 'raw_material' | 'work_in_progress';
+export type ItemType = 'customer_order' | 'general_stock';
 export type ActionType = 'check_in' | 'check_out' | 'move' | 'note_added';
 export type MachineCategory = 'sheet_metal' | 'cutting' | 'laser' | 'robot_bending' | 'bending';
 export type MachineAssignmentStatus = 'queued' | 'processing' | 'needs_attention' | 'ready_for_storage';
 export type RackType = 'raw_materials' | 'work_in_progress' | 'finished_goods' | 'customer_orders' | 'general_stock';
+export interface Zone {
+    id: string;
+    name: string;
+    code: string;
+    description: string;
+    color: string;
+    position_x: number;
+    position_y: number;
+    width: number;
+    height: number;
+    created_at: string;
+    updated_at: string;
+}
 export interface Rack {
     id: string;
+    zone_id: string | null;
     code: string;
     label: string;
     description: string;
@@ -12,12 +26,8 @@ export interface Rack {
     row_count: number;
     column_count: number;
     display_order: number;
+    position_in_zone: number;
     total_shelves: number;
-    position_x: number;
-    position_y: number;
-    width: number;
-    height: number;
-    color: string;
     created_at: string;
     updated_at: string;
 }
@@ -28,17 +38,7 @@ export interface ShelfSlot {
     row_number: number;
     column_number: number;
     capacity: number;
-    width_m: number;
-    depth_m: number;
-    height_m: number;
-    max_volume_m3: number;
-    current_volume_m3: number;
     current_count: number;
-    max_length?: number;
-    max_width?: number;
-    max_height?: number;
-    max_weight_kg?: number;
-    current_weight_kg?: number;
     created_at: string;
     updated_at: string;
 }
@@ -58,7 +58,6 @@ export interface Item {
     material: string;
     dimensions: string;
     weight_kg: number;
-    volume_m3: number;
     type: ItemType;
     order_number: string | null;
     quantity: number;
@@ -127,6 +126,13 @@ export interface ApiError {
     error: string;
     details?: string;
 }
+export interface ZoneWithStats extends Zone {
+    rack_count: number;
+    slot_count: number;
+    total_capacity: number;
+    items_stored: number;
+    slots_in_use: number;
+}
 export interface RackWithShelves extends Rack {
     total_cells: number;
     occupied_cells: number;
@@ -168,7 +174,6 @@ export interface RackCellItem {
     item_name: string;
     customer_name: string | null;
     material: string;
-    volume_m3?: number;
     quantity: number;
     checked_in_at: string;
     checked_in_by: string;
@@ -347,78 +352,6 @@ export interface CreateItemRequest {
     type: ItemType;
     order_number?: string;
     quantity: number;
-}
-export type ActionProposal = {
-    action: 'check_in';
-    item_id: string;
-    item_code: string;
-    shelf_slot_id: string;
-    location: string;
-    quantity: number;
-    notes?: string;
-} | {
-    action: 'check_out';
-    assignment_id: string;
-    unit_code: string;
-    source_type: 'shelf' | 'machine';
-    location: string;
-    item_code: string;
-    notes?: string;
-} | {
-    action: 'move';
-    assignment_id: string;
-    unit_code: string;
-    source_type: 'shelf' | 'machine';
-    from: string;
-    to: string;
-    to_shelf_slot_id?: string;
-    to_machine_id?: string;
-    quantity?: number;
-    notes?: string;
-};
-export interface AssistantRequest {
-    message: string;
-    imageBase64?: string;
-    history: {
-        role: 'user' | 'assistant';
-        content: string;
-    }[];
-    workerName?: string;
-}
-export interface AssistantResponse {
-    message: string;
-    sql?: string;
-    data?: Record<string, unknown>[];
-    rowCount?: number;
-    action?: ActionProposal;
-}
-export interface UnitLookupResult {
-    source_type: 'shelf' | 'machine';
-    assignment_id: string;
-    unit_code: string;
-    quantity: number;
-    item_id: string;
-    item_code: string;
-    item_name: string;
-    material: string;
-    weight_kg: number;
-    customer_name: string | null;
-    customer_code: string | null;
-    location: string;
-    rack_id?: string;
-    rack_code?: string;
-    shelf_slot_id?: string;
-    row_number?: number;
-    column_number?: number;
-    checked_in_at?: string;
-    checked_in_by?: string;
-    machine_id?: string;
-    machine_code?: string;
-    machine_name?: string;
-    machine_category?: MachineCategory;
-    status?: MachineAssignmentStatus;
-    assigned_at?: string;
-    assigned_by?: string;
 }
 export interface UpdateItemRequest {
     name?: string;

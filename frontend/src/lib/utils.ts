@@ -80,17 +80,6 @@ export function machineAssignmentStatusLabel(status: string) {
   return labels[status] || toTitleCase(status);
 }
 
-export function itemTypeLabel(type: string) {
-  const labels: Record<string, string> = {
-    customer_order: 'Customer order',
-    general_stock: 'General stock',
-    raw_material: 'Raw material',
-    work_in_progress: 'Work in progress',
-  };
-
-  return labels[type] || toTitleCase(type);
-}
-
 export function toTitleCase(value: string) {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }

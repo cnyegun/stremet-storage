@@ -12,7 +12,6 @@ function mapCellItems(items: RackWithShelves['shelves'][number]['items']) {
     name: item.item_name,
     customer_name: item.customer_name,
     quantity: item.quantity,
-    volume_m3: item.volume_m3,
     item_href: `/items/${item.item_id}`,
     checkout_href: `/check-out/${item.item_id}?assignmentId=${encodeURIComponent(item.assignment_id)}&unitCode=${encodeURIComponent(item.unit_code)}`,
   }));
@@ -23,8 +22,7 @@ function mapRackFromDetail(rack: RackWithShelves): MapRack {
     id: cell.id,
     row_number: cell.row_number,
     column_number: cell.column_number,
-    max_volume_m3: cell.max_volume_m3,
-    current_volume_m3: cell.current_volume_m3,
+    capacity: cell.capacity,
     current_count: cell.current_count,
     items: mapCellItems(cell.items),
     checkin_href: `/check-in?rack=${encodeURIComponent(rack.id)}&cell=${encodeURIComponent(cell.id)}`,
@@ -38,8 +36,8 @@ function mapRackFromDetail(rack: RackWithShelves): MapRack {
     rack_type: rack.rack_type,
     row_count: rack.row_count,
     column_count: rack.column_count,
-    occupancy_used: cells.reduce((sum, cell) => sum + cell.current_volume_m3, 0),
-    occupancy_total: cells.reduce((sum, cell) => sum + cell.max_volume_m3, 0),
+    occupancy_used: cells.reduce((sum, cell) => sum + cell.current_count, 0),
+    occupancy_total: cells.reduce((sum, cell) => sum + cell.capacity, 0),
     cells,
   };
 }
@@ -62,10 +60,7 @@ function mapRackSummary(rack: RackWithStats): MapRack {
 function buildStats(racks: MapRack[]): WarehouseMapData['stats'] {
   const totalSlots = racks.reduce((sum, rack) => sum + (rack.cells.length || rack.row_count * rack.column_count), 0);
   const occupiedSlots = racks.reduce((sum, rack) => sum + rack.cells.filter((cell) => cell.current_count > 0).length, 0);
-  const totalItemsStored = racks.reduce(
-    (sum, rack) => sum + (rack.cells.length > 0 ? rack.cells.reduce((rackSum, cell) => rackSum + cell.current_count, 0) : rack.occupancy_used),
-    0,
-  );
+  const totalItemsStored = racks.reduce((sum, rack) => sum + rack.occupancy_used, 0);
 
   return {
     total_items_stored: totalItemsStored,

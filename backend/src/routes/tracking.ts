@@ -1,58 +1,11 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import pool from '../db/pool';
-import type { MachineAssignmentStatus } from '../lib/machineAssignmentStatus';
-import { buildRackLocationCode } from '../lib/rackCells';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { getNextTrackingUnitCode } from '../lib/trackingUnits';
 
 
 export const trackingRouter = Router();
-
-interface ActiveStorageAssignment {
-  id: string;
-  item_id: string;
-  shelf_slot_id: string;
-  quantity: number;
-  weight_kg: number;
-  volume_m3: number;
-  rack_code: string;
-  row_number: number;
-  column_number: number;
-}
-
-interface ActiveMachineAssignment {
-  id: string;
-  item_id: string;
-  machine_id: string;
-  status: MachineAssignmentStatus;
-  quantity: number;
-  weight_kg: number;
-  volume_m3: number;
-  machine_code: string;
-}
-
-type ActiveAssignment = ActiveStorageAssignment | ActiveMachineAssignment;
-
-function isStorageAssignment(assignment: ActiveAssignment | null): assignment is ActiveStorageAssignment {
-  return assignment != null && 'shelf_slot_id' in assignment;
-}
-
-function isMachineAssignment(assignment: ActiveAssignment | null): assignment is ActiveMachineAssignment {
-  return assignment != null && 'machine_id' in assignment;
-}
-
-function getAssignmentLocation(assignment: ActiveAssignment | null): string | null {
-  if (isStorageAssignment(assignment)) {
-    return buildRackLocationCode(assignment.rack_code, assignment.row_number, assignment.column_number);
-  }
-
-  if (isMachineAssignment(assignment)) {
-    return `M/${assignment.machine_code}`;
-  }
-
-  return null;
-}
 
 /**
  * GET /api/tracking/unit/:unitCode — lookup a tracking unit by its code
@@ -153,8 +106,7 @@ trackingRouter.get('/unit/:unitCode', asyncHandler(async (req, res) => {
  * Handles Product QR + Location QR interactions
  */
 trackingRouter.post('/scan', asyncHandler(async (req, res) => {
-  const { scan_code, location_code, performed_by } = req.body;
-  const notes = typeof req.body.notes === 'string' && req.body.notes.trim() !== '' ? req.body.notes.trim() : null;
+  const { scan_code, location_code, performed_by, notes: _notes } = req.body;
 
   if (!scan_code || !location_code || !performed_by) {
     res.status(400).json({ error: 'scan_code, location_code, and performed_by are required' });
@@ -169,45 +121,30 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
     const isUnit = scan_code.includes('-U');
     let unitCode = scan_code;
     let itemId: string | null = null;
-    let currentAssignment: ActiveAssignment | null = null;
+    let currentAssignment: any = null;
     let sourceType: 'shelf' | 'machine' | null = null;
 
     if (isUnit) {
         // Find current location of this unit
         const saResult = await client.query(
-            `SELECT sa.*, i.id as item_id, i.weight_kg, i.volume_m3,
-                    r.code AS rack_code, ss.row_number, ss.column_number
-             FROM storage_assignments sa
-             JOIN items i ON sa.item_id = i.id
-             JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
-             JOIN racks r ON ss.rack_id = r.id
-             WHERE sa.unit_code = $1 AND sa.checked_out_at IS NULL`,
+            'SELECT sa.*, i.id as item_id FROM storage_assignments sa JOIN items i ON sa.item_id = i.id WHERE sa.unit_code = $1 AND sa.checked_out_at IS NULL', 
             [scan_code]
         );
         const maResult = await client.query(
-            'SELECT ma.*, i.id as item_id, i.weight_kg, i.volume_m3, m.code as machine_code FROM machine_assignments ma JOIN items i ON ma.item_id = i.id JOIN machines m ON ma.machine_id = m.id WHERE ma.unit_code = $1 AND ma.removed_at IS NULL',
+            'SELECT ma.*, m.code as machine_code FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id WHERE ma.unit_code = $1 AND ma.removed_at IS NULL', 
             [scan_code]
         );
 
         if (saResult.rows.length > 0) {
             currentAssignment = saResult.rows[0];
             sourceType = 'shelf';
-            itemId = saResult.rows[0].item_id;
+            itemId = currentAssignment.item_id;
         } else if (maResult.rows.length > 0) {
             currentAssignment = maResult.rows[0];
             sourceType = 'machine';
-            itemId = maResult.rows[0].item_id;
-        }
-
-        if (!currentAssignment || !itemId) {
-            throw new Error(`Unit ${scan_code} not found or not currently active`);
+            itemId = currentAssignment.item_id;
         }
     }
-
-    const unitQuantity = currentAssignment?.quantity ?? 1;
-    const unitWeight = (Number(currentAssignment?.weight_kg) || 0) * unitQuantity;
-    const unitVolume = (Number(currentAssignment?.volume_m3) || 0) * unitQuantity;
-    const sourceLocation = getAssignmentLocation(currentAssignment);
 
     // 2. Handle Destination: MACHINE
     if (location_code.startsWith('M/')) {
@@ -217,8 +154,8 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
         const machine = machineResult.rows[0];
 
         // Case A: Toggle Status (Already at this machine)
-        if (sourceType === 'machine' && isMachineAssignment(currentAssignment) && currentAssignment.machine_id === machine.id) {
-            const statusMap: Record<MachineAssignmentStatus, MachineAssignmentStatus> = {
+        if (sourceType === 'machine' && currentAssignment.machine_id === machine.id) {
+            const statusMap: Record<string, any> = {
                 'queued': 'processing',
                 'processing': 'ready_for_storage',
                 'ready_for_storage': 'processing', // Loop back or keep same
@@ -226,11 +163,11 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
             };
             const nextStatus = statusMap[currentAssignment.status] || 'processing';
             
-            await client.query('UPDATE machine_assignments SET status = $1, notes = COALESCE($2, notes) WHERE id = $3', [nextStatus, notes, currentAssignment.id]);
+            await client.query('UPDATE machine_assignments SET status = $1, updated_at = NOW() WHERE id = $2', [nextStatus, currentAssignment.id]);
             await client.query(
                 `INSERT INTO activity_log (id, item_id, action, from_location, to_location, performed_by, notes)
                  VALUES ($1, $2, 'note_added', $3, $4, $5, $6)`,
-                [uuidv4(), itemId, location_code, location_code, performed_by, notes ? `Status toggled to ${nextStatus}. ${notes}` : `Status toggled to ${nextStatus}`]
+                [uuidv4(), itemId, 'note_added', location_code, location_code, performed_by, `Status toggled to ${nextStatus}`]
             );
 
             await client.query('COMMIT');
@@ -252,13 +189,10 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
         } else {
             // Move existing unit from somewhere else to machine
             // Checkout from old
-            if (sourceType === 'shelf' && isStorageAssignment(currentAssignment)) {
+            if (sourceType === 'shelf') {
                 await client.query('UPDATE storage_assignments SET checked_out_at = NOW(), checked_out_by = $1 WHERE id = $2', [performed_by, currentAssignment.id]);
-                await client.query(
-                    'UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), current_weight_kg = GREATEST(current_weight_kg - $1, 0), current_volume_m3 = GREATEST(current_volume_m3 - $2, 0) WHERE id = $3',
-                    [unitWeight, unitVolume, currentAssignment.shelf_slot_id]
-                );
-            } else if (sourceType === 'machine' && isMachineAssignment(currentAssignment)) {
+                await client.query('UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0) WHERE id = $1', [currentAssignment.shelf_slot_id]);
+            } else if (sourceType === 'machine') {
                 await client.query('UPDATE machine_assignments SET removed_at = NOW(), removed_by = $1 WHERE id = $2', [performed_by, currentAssignment.id]);
             }
         }
@@ -266,15 +200,15 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
         // Create new machine assignment
         const newMaId = uuidv4();
         await client.query(
-            `INSERT INTO machine_assignments (id, item_id, machine_id, unit_code, status, quantity, assigned_at, assigned_by, notes)
-             VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8)`,
-            [newMaId, itemId, machine.id, unitCode, 'queued', unitQuantity, performed_by, notes]
+            `INSERT INTO machine_assignments (id, item_id, machine_id, unit_code, status, quantity, assigned_at, assigned_by)
+             VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)`,
+            [newMaId, itemId, machine.id, unitCode, 'queued', 1, performed_by]
         );
 
         await client.query(
             `INSERT INTO activity_log (id, item_id, action, from_location, to_location, performed_by, notes)
              VALUES ($1, $2, 'move', $3, $4, $5, $6)`,
-            [uuidv4(), itemId, sourceLocation || 'New', location_code, performed_by, notes || 'Started production phase']
+            [uuidv4(), itemId, sourceType === 'shelf' ? 'Storage' : 'New', location_code, performed_by, `Started production phase`]
         );
 
         await client.query('COMMIT');
@@ -296,38 +230,23 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
     if (shelfResult.rows.length > 0) {
         const shelf = shelfResult.rows[0];
         if (!isUnit) throw new Error("Cannot move a template to storage. Check into a machine first to generate a Unit ID.");
-        if ((Number(shelf.current_count) || 0) >= (Number(shelf.capacity) || 0)) throw new Error('Target shelf slot is full');
-        if ((Number(shelf.current_weight_kg) || 0) + unitWeight > (Number(shelf.max_weight_kg) || 0)) throw new Error('Target shelf slot weight limit exceeded');
-        if ((Number(shelf.current_volume_m3) || 0) + unitVolume > (Number(shelf.max_volume_m3) || 0)) throw new Error('Target shelf slot volume limit exceeded');
 
         // Checkout from old
-        if (sourceType === 'machine' && isMachineAssignment(currentAssignment)) {
+        if (sourceType === 'machine') {
             await client.query('UPDATE machine_assignments SET removed_at = NOW(), removed_by = $1 WHERE id = $2', [performed_by, currentAssignment.id]);
-        } else if (sourceType === 'shelf' && isStorageAssignment(currentAssignment)) {
+        } else if (sourceType === 'shelf') {
             await client.query('UPDATE storage_assignments SET checked_out_at = NOW(), checked_out_by = $1 WHERE id = $2', [performed_by, currentAssignment.id]);
-            await client.query(
-                'UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), current_weight_kg = GREATEST(current_weight_kg - $1, 0), current_volume_m3 = GREATEST(current_volume_m3 - $2, 0) WHERE id = $3',
-                [unitWeight, unitVolume, currentAssignment.shelf_slot_id]
-            );
+            await client.query('UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0) WHERE id = $1', [currentAssignment.shelf_slot_id]);
         }
 
         // Checkin to new shelf
         const newSaId = uuidv4();
         await client.query(
-            `INSERT INTO storage_assignments (id, item_id, shelf_slot_id, unit_code, quantity, checked_in_at, checked_in_by, notes)
-             VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7)`,
-            [newSaId, itemId, shelf.id, unitCode, unitQuantity, performed_by, notes]
+            `INSERT INTO storage_assignments (id, item_id, shelf_slot_id, unit_code, quantity, checked_in_at, checked_in_by)
+             VALUES ($1, $2, $3, $4, $5, NOW(), $6)`,
+            [newSaId, itemId, shelf.id, unitCode, 1, performed_by]
         );
-        await client.query(
-            'UPDATE shelf_slots SET current_count = current_count + 1, current_weight_kg = current_weight_kg + $1, current_volume_m3 = current_volume_m3 + $2 WHERE id = $3',
-            [unitWeight, unitVolume, shelf.id]
-        );
-
-        await client.query(
-            `INSERT INTO activity_log (id, item_id, action, from_location, to_location, performed_by, notes)
-             VALUES ($1, $2, 'move', $3, $4, $5, $6)`,
-            [uuidv4(), itemId, sourceLocation, location_code, performed_by, notes || 'Moved via scanner']
-        );
+        await client.query('UPDATE shelf_slots SET current_count = current_count + 1 WHERE id = $1', [shelf.id]);
 
         await client.query('COMMIT');
         res.json({ data: { unit_code: unitCode, location: location_code, status: 'stored', action: 'storage_checkin' } });
@@ -338,22 +257,17 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
     if (location_code === 'EXIT') {
         if (!isUnit || !currentAssignment) throw new Error("Unit not found or active.");
         
-        if (sourceType === 'machine' && isMachineAssignment(currentAssignment)) {
+        if (sourceType === 'machine') {
             await client.query('UPDATE machine_assignments SET removed_at = NOW(), removed_by = $1 WHERE id = $2', [performed_by, currentAssignment.id]);
-        } else if (isStorageAssignment(currentAssignment)) {
-            await client.query('UPDATE storage_assignments SET checked_out_at = NOW(), checked_out_by = $1 WHERE id = $2', [performed_by, currentAssignment.id]);
-            await client.query(
-                'UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), current_weight_kg = GREATEST(current_weight_kg - $1, 0), current_volume_m3 = GREATEST(current_volume_m3 - $2, 0) WHERE id = $3',
-                [unitWeight, unitVolume, currentAssignment.shelf_slot_id]
-            );
         } else {
-            throw new Error('Unit not found or active.');
+            await client.query('UPDATE storage_assignments SET checked_out_at = NOW(), checked_out_by = $1 WHERE id = $2', [performed_by, currentAssignment.id]);
+            await client.query('UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0) WHERE id = $1', [currentAssignment.shelf_slot_id]);
         }
 
         await client.query(
             `INSERT INTO activity_log (id, item_id, action, from_location, to_location, performed_by, notes)
              VALUES ($1, $2, 'check_out', $3, 'SHIPPED', $4, $5)`,
-            [uuidv4(), itemId, sourceLocation, performed_by, notes || 'Final dispatch via scanner']
+            [uuidv4(), itemId, location_code, performed_by, `Final dispatch via scanner`]
         );
 
         await client.query('COMMIT');

@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import pool from './pool';
 import { buildTrackingUnitCode } from '../lib/trackingUnits';
-import type { RackType } from '@shared/types';
+import { RackType } from '@shared/types';
 
 // --- Helpers ---
 
@@ -62,7 +62,7 @@ async function seed(): Promise<void> {
       const id = uuidv4();
       const code = `Rack-${r}`;
       const label = `Physical Rack ${r}`;
-      const type = rackTypes[r];
+      const type = 'general_stock';
       
       const px = 50 + ((r-1) * 90);
       const py = (r % 2 === 0) ? 100 : 300; 
@@ -96,22 +96,7 @@ async function seed(): Promise<void> {
     }
     console.log('  volumetric rack cells: 400');
 
-    // --- Customers ---
-    const customerIds: Record<string, string> = {};
-    for (const cust of CUSTOMERS) {
-      const id = uuidv4();
-      customerIds[cust.code] = id;
-      await client.query(
-        `INSERT INTO customers (id, name, code, contact_email) VALUES ($1, $2, $3, $4)`,
-        [id, cust.name, cust.code, cust.email]
-      );
-    }
-    console.log('  customers seeded');
-
     // ... Items Section ...
-    interface ItemRecord { id: string; code: string; type: string; weight_kg: number; volume_m3: number }
-    const items: ItemRecord[] = [];
-
     // 1. Raw Materials
     for (let i = 0; i < 20; i++) {
         const id = uuidv4();
@@ -184,8 +169,7 @@ async function seed(): Promise<void> {
       else if (item.type === 'work_in_progress') targetType = 'work_in_progress';
       else targetType = 'customer_orders';
 
-      const maxItemsPerSlot = 10;
-      const candidateSlots = rackSlots[targetType]?.filter(s => slotCounts[s.id] < maxItemsPerSlot) || [];
+      const candidateSlots = rackSlots[targetType]?.filter(s => slotCounts[s.id] < s.capacity) || [];
       if (candidateSlots.length === 0) continue;
 
       const slot = randomChoice(candidateSlots);

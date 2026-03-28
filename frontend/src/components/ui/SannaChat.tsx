@@ -1,6 +1,5 @@
 'use client';
 
-import Image from 'next/image';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Box from '@mui/material/Box';
 import MuiButton from '@mui/material/Button';
@@ -416,7 +415,7 @@ export function SannaChat() {
           {pendingImage && (
             <Box sx={{ px: 1, pt: 0.5, bgcolor: '#fff', borderTop: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', gap: 1 }}>
               <Box sx={{ position: 'relative', width: 48, height: 48, flexShrink: 0 }}>
-                <Image src={pendingImage} alt="Pending" fill unoptimized sizes="48px" style={{ objectFit: 'cover', borderRadius: 4, border: '1px solid #e0e0e0' }} />
+                <img src={pendingImage} alt="Pending" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 4, border: '1px solid #e0e0e0' }} />
                 <IconButton
                   size="small"
                   onClick={() => setPendingImage(null)}
@@ -617,12 +616,10 @@ function MessageBubble({ message, onConfirm, onCancel }: {
         py: 1,
       }}>
         {isUser ? (
-              <Box>
-                {message.imageBase64 && (
-                <Box sx={{ position: 'relative', width: 200, height: 150, mb: 0.5 }}>
-                  <Image src={message.imageBase64} alt="Sent" fill unoptimized sizes="200px" style={{ objectFit: 'contain', borderRadius: 6 }} />
-                </Box>
-                )}
+          <Box>
+            {message.imageBase64 && (
+              <img src={message.imageBase64} alt="Sent" style={{ maxWidth: 200, borderRadius: 6, display: 'block', marginBottom: 4 }} />
+            )}
             {message.content && message.content !== '(photo)' && (
               <Typography sx={{ fontSize: 12.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                 {message.content}

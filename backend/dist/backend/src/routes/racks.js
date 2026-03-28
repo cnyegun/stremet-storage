@@ -54,7 +54,6 @@ exports.racksRouter.get('/:id', (0, asyncHandler_1.asyncHandler)(async (req, res
            'item_name', i.name,
            'customer_name', c.name,
            'material', i.material,
-           'volume_m3', i.volume_m3,
            'quantity', sa.quantity,
            'checked_in_at', sa.checked_in_at,
            'checked_in_by', sa.checked_in_by

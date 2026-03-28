@@ -24,7 +24,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Select } from '@/components/ui/Select';
 import { useToast } from '@/components/ui/Toast';
 import { api } from '@/lib/api';
-import { actionLabel, formatDateTime, formatNumber, itemTypeLabel, locationLabel, machineCategoryLabel } from '@/lib/utils';
+import { actionLabel, formatDateTime, formatNumber, locationLabel, machineCategoryLabel } from '@/lib/utils';
 
 type MoveSource = {
   type: 'shelf' | 'machine';
@@ -88,8 +88,8 @@ export default function ItemDetailPage() {
   const availableSlots = useMemo(
     () =>
       rackDetail?.shelves
-        .filter((cell) => cell.current_count < cell.capacity && cell.current_volume_m3 < cell.max_volume_m3)
-        .map((cell) => ({ id: cell.id, label: `${rackDetail.code} / R${cell.row_number} / C${cell.column_number} (${(cell.max_volume_m3 - cell.current_volume_m3).toFixed(1)} m³ free)` })) || [],
+        .filter((cell) => cell.current_count < cell.capacity)
+        .map((cell) => ({ id: cell.id, label: `${rackDetail.code} / R${cell.row_number} / C${cell.column_number} (${cell.capacity - cell.current_count} free)` })) || [],
     [rackDetail],
   );
 
@@ -175,7 +175,7 @@ export default function ItemDetailPage() {
           <Box>
             <Stack direction="row" alignItems="center" spacing={1.5} flexWrap="wrap">
               <Typography variant="h3">{item.name}</Typography>
-               <Badge variant="primary">{itemTypeLabel(item.type)}</Badge>
+              <Badge variant="primary">{item.type === 'customer_order' ? 'Customer order' : 'General stock'}</Badge>
             </Stack>
             <Typography variant="body2" fontFamily="monospace" fontWeight={500} mt={0.5}>{item.item_code}</Typography>
             <Stack direction="row" spacing={3} mt={1} flexWrap="wrap">

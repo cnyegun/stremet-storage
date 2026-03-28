@@ -113,13 +113,13 @@ export default function RackDetailPage() {
                 <TableRow key={row.rowNumber}>
                   <TableCell sx={{ fontWeight: 500 }}>Row {row.rowNumber}</TableCell>
                   {row.cells.map((cell) => {
-                    const palette = getOccupancyPalette(cell.current_volume_m3, cell.max_volume_m3);
+                    const palette = getOccupancyPalette(cell.current_count, cell.capacity);
 
                     return (
                       <TableCell key={cell.id} sx={{ verticalAlign: 'top' }}>
                         <Box sx={{ border: 1, borderColor: palette.border, bgcolor: palette.fill, p: 1, borderRadius: 1 }}>
                           <Typography variant="body2" fontWeight={500}>{cell.current_count === 0 ? 'Empty' : `${cell.current_count} items`}</Typography>
-                          <Typography variant="caption" color="text.secondary">{cell.current_volume_m3.toFixed(1)}/{cell.max_volume_m3.toFixed(1)} m³</Typography>
+                          <Typography variant="caption" color="text.secondary">{cell.current_count}/{cell.capacity}</Typography>
                           <Stack spacing={0.5} mt={1}>
                             {cell.items.map((item) => (
                               <Link key={item.id} href={item.item_href} style={{ textDecoration: 'none', color: 'inherit' }}>

@@ -108,8 +108,8 @@ export default function MachineDetailPage() {
   const availableMoveShelves = useMemo(
     () =>
       moveRackDetail?.shelves
-        .filter((cell) => cell.current_count < cell.capacity && cell.current_volume_m3 < cell.max_volume_m3)
-        .map((cell) => ({ value: cell.id, label: `${moveRackDetail.code} / R${cell.row_number} / C${cell.column_number} (${(cell.max_volume_m3 - cell.current_volume_m3).toFixed(1)} m³ free)` })) || [],
+        .filter((cell) => cell.current_count < cell.capacity)
+        .map((cell) => ({ value: cell.id, label: `${moveRackDetail.code} / R${cell.row_number} / C${cell.column_number} (${cell.capacity - cell.current_count} free)` })) || [],
     [moveRackDetail],
   );
   const canSubmitMove = Boolean(

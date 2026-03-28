@@ -7,12 +7,10 @@ exports.handleAssistantMessage = handleAssistantMessage;
 const pool_1 = __importDefault(require("../db/pool"));
 const LLM_API_URL = 'https://opencode.ai/zen/v1/chat/completions';
 const LLM_API_KEY = 'sk-5U31szKCRP2TIQll1clR4ETEMduIZpuHQFx1jCvHjEqM463DIfIkkyWCKmgZbn3n';
-const LLM_MODEL = 'kimi-k2.5';
+const LLM_MODEL = 'minimax-m2.5';
 const SCHEMA_PROMPT = `You are Sanna, a helpful warehouse assistant for Stremet, a sheet metal manufacturing company.
 You answer questions about inventory, storage locations, occupancy, customers, machines, and production.
 Keep answers concise and direct — workers are busy. Format numbers clearly.
-Do NOT end your responses with follow-up offers like "I can also look up..." or "Would you like me to...". Just answer the question and stop. Workers will ask if they need more.
-When a worker sends a photo (of a label, sticker, barcode, or product), extract any item codes, part numbers, customer names, or other identifying info from the image. Then use that to look up the item in the database.
 
 When you need data from the database, output a SQL query inside a \`\`\`sql code block. Do NOT use XML tags, tool calls, or function calls — just a plain \`\`\`sql code block.
 ONLY generate SELECT queries. Never INSERT, UPDATE, DELETE, DROP, or ALTER anything.
@@ -45,11 +43,19 @@ storage_assignments(id UUID PK, item_id FK->items, shelf_slot_id FK->shelf_slots
 machines(id UUID PK, name, code UNIQUE, category, description)
 
 -- machine_assignments: Items currently at a machine. Active if removed_at IS NULL.
--- Machines are treated as locations — items move to/from machines just like shelves.
-machine_assignments(id UUID PK, item_id FK->items, machine_id FK->machines, unit_code, parent_unit_code nullable, quantity, assigned_at, assigned_by, removed_at nullable, removed_by nullable, notes)
+machine_assignments(id UUID PK, item_id FK->items, machine_id FK->machines, unit_code, parent_unit_code nullable, status [queued|processing|needs_attention|ready_for_storage], quantity, assigned_at, assigned_by, removed_at nullable, removed_by nullable, notes)
+
+-- production_jobs: Manufacturing workflow tracking
+production_jobs(id UUID PK, job_code UNIQUE, machine_id FK->machines, status [draft|in_progress|completed|cancelled], assigned_by, completed_by, started_at, completed_at, notes, result_summary)
+
+-- production_job_inputs: Items consumed by a production job
+production_job_inputs(id UUID PK, production_job_id FK, machine_assignment_id FK, item_id FK, unit_code, planned_quantity, consumed_quantity, outcome [planned|consumed|partial])
+
+-- production_job_outputs: Items produced by a production job
+production_job_outputs(id UUID PK, production_job_id FK, item_id FK, unit_code, output_type [storage|machine|none], storage_assignment_id FK nullable, machine_assignment_id FK nullable, quantity, outcome [good|scrap|rework|hold], created_by)
 
 -- activity_log: Audit trail of all actions
-activity_log(id UUID PK, item_id FK->items, action [check_in|check_out|move|note_added], tracking_unit_code nullable, machine_id FK nullable, from_location, to_location, performed_by, notes, created_at)
+activity_log(id UUID PK, item_id FK->items, action [check_in|check_out|move|note_added|job_created|job_started|job_completed|job_cancelled|unit_consumed|unit_produced|unit_scrapped|unit_reworked|unit_held], production_job_id FK nullable, tracking_unit_code nullable, machine_id FK nullable, from_location, to_location, performed_by, notes, created_at)
 
 KEY QUERY PATTERNS:
 - Find where an item is stored: JOIN storage_assignments (WHERE checked_out_at IS NULL) -> shelf_slots -> racks -> zones
@@ -58,38 +64,7 @@ KEY QUERY PATTERNS:
 - Available space: shelf_slots WHERE capacity - current_count >= N
 - Customer items: JOIN items ON customer_id -> customers WHERE code/name ILIKE ...
 - Use ILIKE for text search (handles Finnish characters like ä, ö)
-- Today's date: CURRENT_DATE
-
-ACTIONS YOU CAN PERFORM:
-Besides answering questions with SQL, you can help workers check in items, check out items, and move items between locations.
-When the worker asks you to perform an action, FIRST use SQL queries to resolve the needed UUIDs (item_id, assignment_id, shelf_slot_id, machine_id), THEN propose the action.
-
-To propose an action, output a JSON block inside \`\`\`action fences (similar to how you output SQL in \`\`\`sql fences):
-
-CHECK-IN (place an item onto a shelf):
-\`\`\`action
-{"action":"check_in","item_id":"<uuid>","item_code":"<item code>","shelf_slot_id":"<uuid>","location":"<rack/cell label e.g. A-R1/R2C3>","quantity":<number>}
-\`\`\`
-
-CHECK-OUT (remove an item from storage or a machine):
-\`\`\`action
-{"action":"check_out","assignment_id":"<uuid>","unit_code":"<tracking unit code>","source_type":"shelf","location":"<current location label>","item_code":"<item code>"}
-\`\`\`
-For machine check-out use "source_type":"machine".
-
-MOVE (move an item from one location to another):
-\`\`\`action
-{"action":"move","assignment_id":"<uuid>","unit_code":"<tracking unit code>","source_type":"shelf","from":"<from label>","to":"<to label>","to_shelf_slot_id":"<uuid if moving to a shelf>","to_machine_id":"<uuid if moving to a machine>","quantity":<number or null for all>}
-\`\`\`
-
-RULES FOR ACTIONS:
-- ALWAYS resolve names to UUIDs with SQL first. Never guess or make up UUIDs.
-- Include human-readable labels (item_code, location names) so the worker can verify before confirming.
-- Only propose ONE action at a time.
-- Write a short summary BEFORE the \`\`\`action block explaining what you will do.
-- The worker's name is filled in automatically — never ask for it.
-- If you cannot find the item, shelf, or machine, tell the worker what you searched for and that nothing matched.
-- Do NOT combine an action block with a SQL block in the same response — either query or propose, not both.`;
+- Today's date: CURRENT_DATE`;
 function validateSQL(sql) {
     const trimmed = sql.trim().replace(/\s+/g, ' ');
     const upper = trimmed.toUpperCase();
@@ -110,21 +85,18 @@ function validateSQL(sql) {
     return true;
 }
 function extractSQL(text) {
-    // Skip if text has an action block — actions take priority
-    if (/```action/i.test(text))
-        return null;
     // Look for ```sql ... ``` blocks
     const match = text.match(/```sql\s*([\s\S]*?)```/);
     if (match)
-        return splitFirstStatement(match[1].trim());
+        return match[1].trim();
     // Also try plain ``` blocks
     const plainMatch = text.match(/```\s*(SELECT[\s\S]*?)```/i);
     if (plainMatch)
-        return splitFirstStatement(plainMatch[1].trim());
+        return plainMatch[1].trim();
     // Handle XML-style tool calls the model sometimes emits
     const xmlMatch = text.match(/<parameter name="sql">\s*([\s\S]*?)\s*<\/parameter>/);
     if (xmlMatch)
-        return splitFirstStatement(xmlMatch[1].trim());
+        return xmlMatch[1].trim();
     // Last resort: find a bare SELECT ... statement (multi-line)
     const bareMatch = text.match(/((?:WITH|SELECT)\s[\s\S]*?(?:;|\n\n|$))/i);
     if (bareMatch) {
@@ -133,42 +105,6 @@ function extractSQL(text) {
             return candidate;
     }
     return null;
-}
-// If the LLM puts multiple SQL statements in one block, take only the first
-function splitFirstStatement(sql) {
-    // Remove comment lines
-    const lines = sql.split('\n').filter(line => !line.trim().startsWith('--'));
-    const cleaned = lines.join('\n').trim();
-    // Split on semicolons (outside of string literals) and take the first non-empty statement
-    const statements = cleaned.split(/;\s*\n/).filter(s => s.trim());
-    return (statements[0] || cleaned).trim().replace(/;$/, '');
-}
-function extractAction(text) {
-    const match = text.match(/```action\s*([\s\S]*?)```/);
-    if (!match)
-        return null;
-    try {
-        const obj = JSON.parse(match[1].trim());
-        if (obj.action === 'check_in' && obj.item_id && obj.shelf_slot_id && obj.item_code && obj.location) {
-            return obj;
-        }
-        if (obj.action === 'check_out' && obj.assignment_id && obj.unit_code && obj.item_code) {
-            return obj;
-        }
-        if (obj.action === 'move' && obj.assignment_id && obj.unit_code && (obj.to_shelf_slot_id || obj.to_machine_id)) {
-            return obj;
-        }
-        return null;
-    }
-    catch {
-        return null;
-    }
-}
-function extractTextBeforeAction(text) {
-    const idx = text.indexOf('```action');
-    if (idx <= 0)
-        return '';
-    return text.slice(0, idx).trim();
 }
 async function callLLM(messages) {
     const body = JSON.stringify({
@@ -217,35 +153,17 @@ async function executeReadOnlyQuery(sql) {
         client.release();
     }
 }
-async function handleAssistantMessage(message, history, imageBase64) {
-    const userContent = imageBase64
-        ? [
-            { type: 'image_url', image_url: { url: imageBase64, detail: 'auto' } },
-            { type: 'text', text: message || 'What is shown in this image? Extract any item codes, barcodes, or product information you can see.' },
-        ]
-        : message;
+async function handleAssistantMessage(message, history) {
     const messages = [
         ...history.slice(-18),
-        { role: 'user', content: userContent },
+        { role: 'user', content: message },
     ];
     let lastSql;
     let lastData;
     let lastRowCount;
     // Loop: let the LLM run up to 3 SQL queries to answer the question
-    for (let round = 0; round < 5; round++) {
+    for (let round = 0; round < 3; round++) {
         const llmResponse = await callLLM(messages);
-        // Check for action proposal first
-        const action = extractAction(llmResponse);
-        if (action) {
-            const summaryText = extractTextBeforeAction(llmResponse);
-            return {
-                message: summaryText || 'I\'d like to perform this action:',
-                sql: lastSql,
-                data: lastData,
-                rowCount: lastRowCount,
-                action,
-            };
-        }
         const sql = extractSQL(llmResponse);
         if (!sql) {
             // No more SQL — this is the final answer
@@ -274,7 +192,7 @@ async function handleAssistantMessage(message, history, imageBase64) {
             else {
                 messages.push({
                     role: 'user',
-                    content: `Query returned ${result.rowCount} rows. Results:\n${JSON.stringify(lastData, null, 2)}\n\nIf you have enough information, give a clear final answer (or propose an action using an \`\`\`action block if the user asked you to do something). If you need another query, go ahead. Do NOT repeat a query you already ran.`,
+                    content: `Query returned ${result.rowCount} rows. Results:\n${JSON.stringify(lastData, null, 2)}\n\nIf you have enough information, give a clear final answer. If you need another query, go ahead. Do NOT repeat a query you already ran.`,
                 });
             }
         }
@@ -286,20 +204,9 @@ async function handleAssistantMessage(message, history, imageBase64) {
             });
         }
     }
-    // If we exhausted rounds, do one final call asking for a summary (or action proposal)
-    messages.push({ role: 'user', content: 'Please summarize what you found so far. No more SQL queries. If the user asked you to perform an action and you have all the UUIDs, propose the action now using an ```action block.' });
+    // If we exhausted rounds, do one final call asking for a summary
+    messages.push({ role: 'user', content: 'Please summarize what you found so far. No more SQL queries.' });
     const finalResponse = await callLLM(messages);
-    const finalAction = extractAction(finalResponse);
-    if (finalAction) {
-        const summaryText = extractTextBeforeAction(finalResponse);
-        return {
-            message: summaryText || 'I\'d like to perform this action:',
-            sql: lastSql,
-            data: lastData,
-            rowCount: lastRowCount,
-            action: finalAction,
-        };
-    }
     return {
         message: finalResponse,
         sql: lastSql,
