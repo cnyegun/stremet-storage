@@ -448,6 +448,7 @@ export type ActionProposal =
 
 export interface AssistantRequest {
   message: string;
+  imageBase64?: string;
   history: { role: 'user' | 'assistant'; content: string }[];
   workerName?: string;
 }

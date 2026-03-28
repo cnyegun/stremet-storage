@@ -10,6 +10,7 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { useWorkerSession } from '@/components/ui/WorkerSession';
 import { api } from '@/lib/api';
+import { resizeImage } from '@/lib/resizeImage';
 import type { ActionProposal } from '@shared/types';
 
 // Inline SVG icons to avoid @mui/icons-material dependency issues
@@ -37,12 +38,22 @@ function CloseIcon() {
   );
 }
 
+function CameraIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 15.2a3.2 3.2 0 100-6.4 3.2 3.2 0 000 6.4z" />
+      <path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" />
+    </svg>
+  );
+}
+
 type ActionStatus = 'pending' | 'executing' | 'done' | 'error' | 'cancelled';
 
 interface Message {
   id: number;
   role: 'user' | 'assistant';
   content: string;
+  imageBase64?: string;
   sql?: string;
   data?: Record<string, unknown>[];
   rowCount?: number;
@@ -145,8 +156,10 @@ export function SannaChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pendingImage, setPendingImage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { workerName } = useWorkerSession();
 
   const scrollToBottom = useCallback(() => {
@@ -215,18 +228,39 @@ export function SannaChat() {
     updateMessage(msg.id, { actionStatus: 'cancelled' });
   }, [updateMessage]);
 
+  const handleImageSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await resizeImage(file);
+      setPendingImage(dataUrl);
+    } catch {
+      // silently fail — worker can retry
+    }
+    // reset so same file can be selected again
+    e.target.value = '';
+  }, []);
+
   const handleSend = async () => {
     const trimmed = input.trim();
-    if (!trimmed || loading) return;
+    if (!trimmed && !pendingImage) return;
+    if (loading) return;
 
-    const userMsg: Message = { id: nextId(), role: 'user', content: trimmed };
+    const userMsg: Message = { id: nextId(), role: 'user', content: trimmed || '(photo)', imageBase64: pendingImage || undefined };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
+    const imageToSend = pendingImage;
+    setPendingImage(null);
     setLoading(true);
 
     try {
       const history = messages.map(m => ({ role: m.role, content: m.content }));
-      const res = await api.sendAssistantMessage({ message: trimmed, history, workerName: workerName || undefined });
+      const res = await api.sendAssistantMessage({
+        message: trimmed,
+        imageBase64: imageToSend || undefined,
+        history,
+        workerName: workerName || undefined,
+      });
       const d = res.data;
       setMessages(prev => [...prev, {
         id: nextId(),
@@ -377,20 +411,52 @@ export function SannaChat() {
             <div ref={messagesEndRef} />
           </Box>
 
+          {/* Image preview */}
+          {pendingImage && (
+            <Box sx={{ px: 1, pt: 0.5, bgcolor: '#fff', borderTop: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box sx={{ position: 'relative', width: 48, height: 48, flexShrink: 0 }}>
+                <img src={pendingImage} alt="Pending" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 4, border: '1px solid #e0e0e0' }} />
+                <IconButton
+                  size="small"
+                  onClick={() => setPendingImage(null)}
+                  sx={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, bgcolor: '#fff', border: '1px solid #ccc', '&:hover': { bgcolor: '#f5f5f5' } }}
+                >
+                  <CloseIcon />
+                </IconButton>
+              </Box>
+              <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>Photo attached</Typography>
+            </Box>
+          )}
+
           {/* Input */}
           <Box sx={{
             p: 1,
-            borderTop: '1px solid #e0e0e0',
+            borderTop: pendingImage ? 'none' : '1px solid #e0e0e0',
             bgcolor: '#fff',
             display: 'flex',
             gap: 0.5,
             alignItems: 'flex-end',
           }}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleImageSelect}
+              style={{ display: 'none' }}
+            />
+            <IconButton
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
+              sx={{ color: '#757575', '&:hover': { color: '#1565C0' } }}
+            >
+              <CameraIcon />
+            </IconButton>
             <TextField
               inputRef={inputRef}
               fullWidth
               size="small"
-              placeholder="Ask Sanna..."
+              placeholder={pendingImage ? 'Add a message or just send the photo...' : 'Ask Sanna...'}
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
@@ -404,7 +470,7 @@ export function SannaChat() {
             />
             <IconButton
               onClick={handleSend}
-              disabled={loading || !input.trim()}
+              disabled={loading || (!input.trim() && !pendingImage)}
               sx={{
                 color: '#1565C0',
                 '&.Mui-disabled': { color: '#bdbdbd' },
@@ -550,9 +616,16 @@ function MessageBubble({ message, onConfirm, onCancel }: {
         py: 1,
       }}>
         {isUser ? (
-          <Typography sx={{ fontSize: 12.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-            {message.content}
-          </Typography>
+          <Box>
+            {message.imageBase64 && (
+              <img src={message.imageBase64} alt="Sent" style={{ maxWidth: 200, borderRadius: 6, display: 'block', marginBottom: 4 }} />
+            )}
+            {message.content && message.content !== '(photo)' && (
+              <Typography sx={{ fontSize: 12.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {message.content}
+              </Typography>
+            )}
+          </Box>
         ) : (
           <Box
             sx={{

@@ -20,7 +20,7 @@ app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
 }));
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
 
 // Health check
 app.get('/api/health', (_req, res) => {

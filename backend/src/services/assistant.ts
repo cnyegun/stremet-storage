@@ -3,11 +3,13 @@ import type { ActionProposal } from '@shared/types';
 
 const LLM_API_URL = 'https://opencode.ai/zen/v1/chat/completions';
 const LLM_API_KEY = 'sk-5U31szKCRP2TIQll1clR4ETEMduIZpuHQFx1jCvHjEqM463DIfIkkyWCKmgZbn3n';
-const LLM_MODEL = 'minimax-m2.5';
+const LLM_MODEL = 'kimi-k2.5';
 
 const SCHEMA_PROMPT = `You are Sanna, a helpful warehouse assistant for Stremet, a sheet metal manufacturing company.
 You answer questions about inventory, storage locations, occupancy, customers, machines, and production.
 Keep answers concise and direct — workers are busy. Format numbers clearly.
+Do NOT end your responses with follow-up offers like "I can also look up..." or "Would you like me to...". Just answer the question and stop. Workers will ask if they need more.
+When a worker sends a photo (of a label, sticker, barcode, or product), extract any item codes, part numbers, customer names, or other identifying info from the image. Then use that to look up the item in the database.
 
 When you need data from the database, output a SQL query inside a \`\`\`sql code block. Do NOT use XML tags, tool calls, or function calls — just a plain \`\`\`sql code block.
 ONLY generate SELECT queries. Never INSERT, UPDATE, DELETE, DROP, or ALTER anything.
@@ -86,9 +88,11 @@ RULES FOR ACTIONS:
 - If you cannot find the item, shelf, or machine, tell the worker what you searched for and that nothing matched.
 - Do NOT combine an action block with a SQL block in the same response — either query or propose, not both.`;
 
+type MultimodalContent = Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string; detail?: string } }>;
+
 interface ChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string | MultimodalContent;
 }
 
 interface AssistantResult {
@@ -239,11 +243,19 @@ async function executeReadOnlyQuery(sql: string): Promise<{ rows: Record<string,
 
 export async function handleAssistantMessage(
   message: string,
-  history: ChatMessage[]
+  history: ChatMessage[],
+  imageBase64?: string,
 ): Promise<AssistantResult> {
+  const userContent: string | MultimodalContent = imageBase64
+    ? [
+        { type: 'image_url', image_url: { url: imageBase64, detail: 'auto' } },
+        { type: 'text', text: message || 'What is shown in this image? Extract any item codes, barcodes, or product information you can see.' },
+      ]
+    : message;
+
   const messages: ChatMessage[] = [
     ...history.slice(-18),
-    { role: 'user', content: message },
+    { role: 'user', content: userContent },
   ];
 
   let lastSql: string | undefined;
