@@ -15,6 +15,20 @@ export type MachineAssignmentStatus = 'queued' | 'processing' | 'needs_attention
 
 export type RackType = 'raw_materials' | 'work_in_progress' | 'finished_goods' | 'customer_orders' | 'general_stock';
 
+export type UnitUpdateCategory = 'assembly' | 'storage';
+
+export type InventoryEventSource = 'worker' | 'sensor' | 'system';
+
+export type InventoryEventStatus = 'recorded' | 'open' | 'matched' | 'resolved' | 'dismissed';
+
+export type SensorDeviceStatus = 'active' | 'inactive' | 'maintenance';
+
+export type SensorDeviceKind = 'weight';
+
+export type AlertSeverity = 'low' | 'medium' | 'high' | 'critical';
+
+export type AlertStatus = 'open' | 'acknowledged' | 'resolved' | 'dismissed';
+
 // --- Database Entities ---
 
 export interface Zone {
@@ -133,6 +147,105 @@ export interface MachineAssignment {
   removed_by: string | null;
   notes: string | null;
   created_at: string;
+}
+
+export interface UnitFieldUpdate {
+  id: string;
+  unit_code: string;
+  item_id: string;
+  storage_assignment_id: string | null;
+  machine_assignment_id: string | null;
+  update_category: UnitUpdateCategory;
+  status: string;
+  quantity: number | null;
+  location_confirmed: boolean;
+  reported_by: string;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface SensorDevice {
+  id: string;
+  device_code: string;
+  sensor_kind: SensorDeviceKind;
+  rack_id: string | null;
+  shelf_slot_id: string | null;
+  status: SensorDeviceStatus;
+  baseline_weight_kg: number;
+  alert_drop_threshold_kg: number;
+  last_seen_at: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SensorReading {
+  id: string;
+  sensor_device_id: string;
+  recorded_at: string;
+  weight_kg: number;
+  battery_level: number | null;
+  raw_payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface InventoryEvent {
+  id: string;
+  unit_code: string | null;
+  item_id: string | null;
+  storage_assignment_id: string | null;
+  machine_assignment_id: string | null;
+  sensor_device_id: string | null;
+  source: InventoryEventSource;
+  event_type: string;
+  event_status: InventoryEventStatus;
+  quantity: number | null;
+  location_code: string | null;
+  reported_by: string | null;
+  notes: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ManagerAlert {
+  id: string;
+  inventory_event_id: string;
+  alert_type: string;
+  severity: AlertSeverity;
+  status: AlertStatus;
+  summary: string;
+  details: string | null;
+  created_at: string;
+  resolved_at: string | null;
+  resolved_by: string | null;
+}
+
+export interface UnitFieldContext {
+  unit_code: string;
+  item_id: string;
+  item_code: string;
+  item_name: string;
+  customer_name: string | null;
+  active_location_type: 'storage' | 'machine';
+  storage_assignment_id: string | null;
+  machine_assignment_id: string | null;
+  location_code: string;
+  rack_code: string | null;
+  rack_label: string | null;
+  row_number: number | null;
+  column_number: number | null;
+  machine_code: string | null;
+  machine_name: string | null;
+  quantity: number;
+  latest_updates: UnitFieldUpdate[];
+}
+
+export interface ManagerAlertWithContext extends ManagerAlert {
+  event_type: string;
+  event_source: InventoryEventSource;
+  location_code: string | null;
+  unit_code: string | null;
+  device_code: string | null;
 }
 
 // --- API Response Wrappers ---
@@ -398,6 +511,23 @@ export interface MoveRequest {
   performed_by: string;
   notes?: string;
   quantity?: number;
+}
+
+export interface CreateUnitFieldUpdateRequest {
+  update_category: UnitUpdateCategory;
+  status: string;
+  quantity?: number;
+  location_confirmed?: boolean;
+  reported_by: string;
+  notes?: string;
+}
+
+export interface CreateSensorReadingRequest {
+  device_code: string;
+  weight_kg: number;
+  recorded_at?: string;
+  battery_level?: number;
+  raw_payload?: Record<string, unknown>;
 }
 
 export interface CreateItemRequest {
