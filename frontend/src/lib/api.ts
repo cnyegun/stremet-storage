@@ -3,8 +3,6 @@ import type {
   ActivityLogWithItem,
   ApiListResponse,
   ApiResponse,
-  AssistantRequest,
-  AssistantResponse,
   CheckInRequest,
   CheckOutRequest,
   CreateItemRequest,
@@ -36,6 +34,7 @@ type MoveResult = {
   quantity_moved: number;
   quantity_remaining: number;
 };
+type MachineStatusUpdateResult = { assignment_id: string; unit_code: string; status: string };
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000/api';
 
@@ -115,13 +114,13 @@ export const api = {
 
   getMachine: (id: string) => request<ApiResponse<MachineDetail>>(`/machines/${id}`),
 
-  getStats: () => request<ApiResponse<WarehouseStats>>('/stats'),
-
-  globalSearch: (query: string) => request<ApiResponse<GlobalSearchResponse>>(`/search?q=${encodeURIComponent(query)}`),
-
-  sendAssistantMessage: (body: AssistantRequest) =>
-    request<ApiResponse<AssistantResponse>>('/assistant', {
+  updateMachineAssignmentStatus: (machineId: string, assignmentId: string, body: { status: string; performed_by: string; notes?: string }) =>
+    request<ApiResponse<MachineStatusUpdateResult>>(`/machines/${machineId}/assignments/${assignmentId}/status`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  getStats: () => request<ApiResponse<WarehouseStats>>('/stats'),
+
+  globalSearch: (query: string) => request<ApiResponse<GlobalSearchResponse>>(`/search?q=${encodeURIComponent(query)}`),
 };

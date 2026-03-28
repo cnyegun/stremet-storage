@@ -7,35 +7,18 @@
 
 export type ItemType = 'customer_order' | 'general_stock';
 
-export type ActionType =
-  | 'check_in'
-  | 'check_out'
-  | 'move'
-  | 'note_added';
+export type ActionType = 'check_in' | 'check_out' | 'move' | 'note_added';
 
 export type MachineCategory = 'sheet_metal' | 'cutting' | 'laser' | 'robot_bending' | 'bending';
+
+export type MachineAssignmentStatus = 'queued' | 'processing' | 'needs_attention' | 'ready_for_storage';
 
 export type RackType = 'raw_materials' | 'work_in_progress' | 'finished_goods' | 'customer_orders' | 'general_stock';
 
 // --- Database Entities ---
 
-export interface Zone {
-  id: string;
-  name: string;
-  code: string;
-  description: string;
-  color: string;
-  position_x: number;
-  position_y: number;
-  width: number;
-  height: number;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface Rack {
   id: string;
-  zone_id: string | null;
   code: string;
   label: string;
   description: string;
@@ -43,8 +26,12 @@ export interface Rack {
   row_count: number;
   column_count: number;
   display_order: number;
-  position_in_zone: number;
   total_shelves: number;
+  position_x: number;
+  position_y: number;
+  width: number;
+  height: number;
+  color: string;
   created_at: string;
   updated_at: string;
 }
@@ -104,8 +91,6 @@ export interface ActivityLog {
   id: string;
   item_id: string;
   action: ActionType;
-  tracking_unit_code?: string | null;
-  machine_id?: string | null;
   from_location: string | null;
   to_location: string | null;
   performed_by: string;
@@ -129,6 +114,7 @@ export interface MachineAssignment {
   machine_id: string;
   unit_code: string;
   parent_unit_code: string | null;
+  status: MachineAssignmentStatus;
   quantity: number;
   assigned_at: string;
   assigned_by: string;
@@ -158,14 +144,6 @@ export interface ApiError {
 }
 
 // --- Enriched / Joined Types (API responses with related data) ---
-
-export interface ZoneWithStats extends Zone {
-  rack_count: number;
-  slot_count: number;
-  total_capacity: number;
-  items_stored: number;
-  slots_in_use: number;
-}
 
 export interface RackWithShelves extends Rack {
   total_cells: number;
@@ -228,6 +206,7 @@ export interface MachineLocation {
   assignment_id: string;
   unit_code: string;
   parent_unit_code: string | null;
+  status: MachineAssignmentStatus;
   machine_id: string;
   machine_code: string;
   machine_name: string;
@@ -242,6 +221,7 @@ export interface TrackingUnit {
   source_type: 'shelf' | 'machine';
   unit_code: string;
   parent_unit_code: string | null;
+  status: MachineAssignmentStatus | null;
   quantity: number;
   assigned_at: string;
   assigned_by: string;
@@ -272,6 +252,7 @@ export interface MachineDetailItem {
   assignment_id: string;
   unit_code: string;
   parent_unit_code: string | null;
+  status: MachineAssignmentStatus;
   item_id: string;
   item_code: string;
   item_name: string;
@@ -293,6 +274,7 @@ export interface MachineActivity extends ActivityLog {
 export interface MachineStats {
   active_assignments: number;
   total_pieces: number;
+  completed_assignments: number;
   oldest_assignment: string | null;
 }
 

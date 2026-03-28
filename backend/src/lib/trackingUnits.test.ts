@@ -6,6 +6,12 @@ import {
   resolveMoveQuantity,
   sanitizeTrackingUnitPrefix,
 } from './trackingUnits';
+import {
+  assertMachineAssignmentStatus,
+  buildMachineStatusChangeNote,
+  getDefaultMachineAssignmentStatus,
+} from './machineAssignmentStatus';
+
 describe('sanitizeTrackingUnitPrefix', () => {
   it('keeps uppercase letters, digits, and single dashes', () => {
     expect(sanitizeTrackingUnitPrefix('stk-033-control-panel')).toBe('STK-033-CONTROL');
@@ -118,3 +124,24 @@ describe('buildTrackingUnitMoveNote', () => {
   });
 });
 
+describe('machine assignment status helpers', () => {
+  it('uses queued as the default machine assignment status', () => {
+    expect(getDefaultMachineAssignmentStatus()).toBe('queued');
+  });
+
+  it('accepts all supported statuses', () => {
+    expect(assertMachineAssignmentStatus('queued')).toBe('queued');
+    expect(assertMachineAssignmentStatus('processing')).toBe('processing');
+    expect(assertMachineAssignmentStatus('needs_attention')).toBe('needs_attention');
+    expect(assertMachineAssignmentStatus('ready_for_storage')).toBe('ready_for_storage');
+  });
+
+  it('rejects unknown statuses', () => {
+    expect(() => assertMachineAssignmentStatus('broken')).toThrow('Invalid machine assignment status');
+  });
+
+  it('builds a readable note for status changes', () => {
+    expect(buildMachineStatusChangeNote('queued', 'needs_attention')).toBe('Machine status changed from queued to needs_attention');
+    expect(buildMachineStatusChangeNote('queued', 'processing', 'Started cutting')).toBe('Machine status changed from queued to processing. Started cutting');
+  });
+});

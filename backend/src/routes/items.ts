@@ -3,6 +3,9 @@ import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import pool from '../db/pool';
 import { asyncHandler } from '../middleware/asyncHandler';
+import {
+  getDefaultMachineAssignmentStatus,
+} from '../lib/machineAssignmentStatus';
 import { buildRackCellLabel, buildRackLocationCode } from '../lib/rackCells';
 import { buildTrackingUnitMoveNote, getNextTrackingUnitCode, resolveMoveQuantity } from '../lib/trackingUnits';
 
@@ -304,11 +307,11 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
       ss.max_height,
       r.code AS rack_code,
       r.rack_type,
-      z.position_x AS zone_x,
-      z.position_y AS zone_y
+      r.display_order,
+      r.position_x,
+      r.position_y
     FROM shelf_slots ss
     JOIN racks r ON ss.rack_id = r.id
-    JOIN zones z ON r.zone_id = z.id
     WHERE 
       -- Physical Room (Count)
       (ss.capacity - ss.current_count) >= $1
@@ -331,7 +334,7 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
     .map(slot => {
       const score = OptimizerService.scoreSlot(
         {
-          shelf_slot_id: slot.shelf_slot_id,
+          cell_id: slot.shelf_slot_id,
           rack_id: slot.rack_id,
           row_number: slot.row_number,
           column_number: slot.column_number,
@@ -342,8 +345,9 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
           max_height: slot.max_height,
           rack_code: slot.rack_code,
           rack_type: slot.rack_type,
-          zone_x: slot.zone_x,
-          zone_y: slot.zone_y
+          display_order: slot.display_order,
+          position_x: slot.position_x,
+          position_y: slot.position_y
         }, 
         {
           type: item.type as 'customer_order' | 'general_stock' | 'raw_material' | 'work_in_progress',
@@ -430,7 +434,7 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
 
   // Machine locations
   const machineResult = await pool.query(`
-    SELECT ma.id AS assignment_id, ma.unit_code, ma.parent_unit_code, ma.machine_id, ma.quantity, ma.assigned_at, ma.assigned_by,
+    SELECT ma.id AS assignment_id, ma.unit_code, ma.parent_unit_code, ma.status, ma.machine_id, ma.quantity, ma.assigned_at, ma.assigned_by,
       m.code AS machine_code, m.name AS machine_name, m.category AS machine_category
     FROM machine_assignments ma
     JOIN machines m ON ma.machine_id = m.id
@@ -475,7 +479,7 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
         ma.quantity,
         ma.assigned_at AS assigned_at,
         ma.assigned_by AS assigned_by,
-        NULL::text AS status,
+        ma.status,
         NULL::uuid AS shelf_slot_id,
         NULL::uuid AS rack_id,
         NULL::text AS rack_code,
@@ -894,9 +898,9 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
       // Create machine assignment at target
       newAssignmentId = uuidv4();
       await client.query(
-        `INSERT INTO machine_assignments (id, item_id, machine_id, unit_code, parent_unit_code, quantity, assigned_at, assigned_by, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8)`,
-        [newAssignmentId, itemId, to_machine_id, movedUnitCode, movedParentUnitCode, moveQty, performed_by, notes || null]
+        `INSERT INTO machine_assignments (id, item_id, machine_id, unit_code, parent_unit_code, status, quantity, assigned_at, assigned_by, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8, $9)`,
+        [newAssignmentId, itemId, to_machine_id, movedUnitCode, movedParentUnitCode, getDefaultMachineAssignmentStatus(), moveQty, performed_by, notes || null]
       );
     } else {
       // --- Destination is a shelf ---
