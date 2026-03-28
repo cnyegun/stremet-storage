@@ -3,6 +3,8 @@ import type {
   ActivityLogWithItem,
   ApiListResponse,
   ApiResponse,
+  AssistantRequest,
+  AssistantResponse,
   CheckInRequest,
   CheckOutRequest,
   CreateItemRequest,
@@ -18,6 +20,7 @@ import type {
   MoveRequest,
   RackWithStats,
   RackWithShelves,
+  UnitLookupResult,
   UpdateItemRequest,
   WarehouseStats,
 } from '@shared/types';
@@ -123,4 +126,13 @@ export const api = {
   getStats: () => request<ApiResponse<WarehouseStats>>('/stats'),
 
   globalSearch: (query: string) => request<ApiResponse<GlobalSearchResponse>>(`/search?q=${encodeURIComponent(query)}`),
+
+  lookupUnit: (unitCode: string) =>
+    request<ApiResponse<UnitLookupResult>>(`/tracking/unit/${encodeURIComponent(unitCode)}`),
+
+  sendAssistantMessage: (body: AssistantRequest) =>
+    request<ApiResponse<AssistantResponse>>('/assistant', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 };

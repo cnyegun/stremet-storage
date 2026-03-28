@@ -54,12 +54,13 @@ export function GridView({ racks }: GridViewProps) {
 
   function renderCell(cell: MapCell) {
     const expanded = expandedCellId === cell.id;
+    const palette = getOccupancyPalette(cell.current_count, cell.capacity);
 
     return (
       <TableCell key={cell.id} sx={{ verticalAlign: 'top', bgcolor: 'background.paper', p: 1 }}>
         <Box
           onClick={() => setExpandedCellId((current) => (current === cell.id ? null : cell.id))}
-          sx={{ cursor: 'pointer' }}
+          sx={{ cursor: 'pointer', border: 1, p: 1, borderColor: palette.border, bgcolor: palette.fill, borderRadius: 1 }}
         >
           <OccupancyBar used={cell.current_volume_m3} total={cell.max_volume_m3} compact />
         </Box>
@@ -101,11 +102,11 @@ export function GridView({ racks }: GridViewProps) {
                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                   <Box>
                     <Typography variant="subtitle1" fontWeight={700}>{rack.label}</Typography>
-                    <Typography variant="caption" color="text.secondary">Standard Volumetric Rack · {rack.row_count}x{rack.column_count} Grid</Typography>
+                    <Typography variant="caption" color="text.secondary">Standard rack · {rack.row_count}x{rack.column_count} grid</Typography>
                   </Box>
                   <Link href={`/racks/${rack.id}`} style={{ fontSize: 13, color: '#1565C0', fontWeight: 600 }}>Inspect Rack</Link>
                 </Stack>
-                <OccupancyBar used={rack.occupancy_used} total={rack.occupancy_total} label="Total Rack Volume" />
+                <OccupancyBar used={rack.occupancy_used} total={rack.occupancy_total} label="Rack occupancy" />
               </Box>
             </Box>
             <Collapse in={expanded}>

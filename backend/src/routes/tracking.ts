@@ -3,17 +3,110 @@ import { v4 as uuidv4 } from 'uuid';
 import pool from '../db/pool';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { getNextTrackingUnitCode } from '../lib/trackingUnits';
-import { buildRackLocationCode } from '../lib/rackCells';
-import { assertMachineAssignmentStatus, getDefaultMachineAssignmentStatus } from '../lib/machineAssignmentStatus';
+
 
 export const trackingRouter = Router();
+
+/**
+ * GET /api/tracking/unit/:unitCode — lookup a tracking unit by its code
+ * Returns item details + current location (shelf or machine)
+ */
+trackingRouter.get('/unit/:unitCode', asyncHandler(async (req, res) => {
+  const { unitCode } = req.params;
+
+  // Check storage assignments (shelf)
+  const shelfResult = await pool.query(`
+    SELECT sa.id AS assignment_id, sa.unit_code, sa.quantity, sa.checked_in_at, sa.checked_in_by,
+      i.id AS item_id, i.item_code, i.name AS item_name, i.material, i.weight_kg,
+      c.name AS customer_name, c.code AS customer_code,
+      r.id AS rack_id, r.code AS rack_code, r.label AS rack_label,
+      ss.row_number, ss.column_number, ss.id AS shelf_slot_id
+    FROM storage_assignments sa
+    JOIN items i ON sa.item_id = i.id
+    LEFT JOIN customers c ON i.customer_id = c.id
+    JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
+    JOIN racks r ON ss.rack_id = r.id
+    WHERE sa.unit_code = $1 AND sa.checked_out_at IS NULL
+  `, [unitCode]);
+
+  if (shelfResult.rows.length > 0) {
+    const row = shelfResult.rows[0];
+    res.json({
+      data: {
+        source_type: 'shelf' as const,
+        assignment_id: row.assignment_id,
+        unit_code: row.unit_code,
+        quantity: row.quantity,
+        checked_in_at: row.checked_in_at,
+        checked_in_by: row.checked_in_by,
+        item_id: row.item_id,
+        item_code: row.item_code,
+        item_name: row.item_name,
+        material: row.material,
+        weight_kg: row.weight_kg,
+        customer_name: row.customer_name,
+        customer_code: row.customer_code,
+        location: `${row.rack_code}/R${row.row_number}C${row.column_number}`,
+        rack_id: row.rack_id,
+        rack_code: row.rack_code,
+        shelf_slot_id: row.shelf_slot_id,
+        row_number: row.row_number,
+        column_number: row.column_number,
+      },
+    });
+    return;
+  }
+
+  // Check machine assignments
+  const machineResult = await pool.query(`
+    SELECT ma.id AS assignment_id, ma.unit_code, ma.status, ma.quantity, ma.assigned_at, ma.assigned_by,
+      i.id AS item_id, i.item_code, i.name AS item_name, i.material, i.weight_kg,
+      c.name AS customer_name, c.code AS customer_code,
+      m.id AS machine_id, m.code AS machine_code, m.name AS machine_name, m.category AS machine_category
+    FROM machine_assignments ma
+    JOIN items i ON ma.item_id = i.id
+    LEFT JOIN customers c ON i.customer_id = c.id
+    JOIN machines m ON ma.machine_id = m.id
+    WHERE ma.unit_code = $1 AND ma.removed_at IS NULL
+  `, [unitCode]);
+
+  if (machineResult.rows.length > 0) {
+    const row = machineResult.rows[0];
+    res.json({
+      data: {
+        source_type: 'machine' as const,
+        assignment_id: row.assignment_id,
+        unit_code: row.unit_code,
+        status: row.status,
+        quantity: row.quantity,
+        assigned_at: row.assigned_at,
+        assigned_by: row.assigned_by,
+        item_id: row.item_id,
+        item_code: row.item_code,
+        item_name: row.item_name,
+        material: row.material,
+        weight_kg: row.weight_kg,
+        customer_name: row.customer_name,
+        customer_code: row.customer_code,
+        location: `M/${row.machine_code}`,
+        machine_id: row.machine_id,
+        machine_code: row.machine_code,
+        machine_name: row.machine_name,
+        machine_category: row.machine_category,
+      },
+    });
+    return;
+  }
+
+  res.status(404).json({ error: `Unit ${unitCode} not found or not currently active` });
+}));
 
 /**
  * UNIFIED SCAN ENDPOINT
  * Handles Product QR + Location QR interactions
  */
 trackingRouter.post('/scan', asyncHandler(async (req, res) => {
-  const { scan_code, location_code, performed_by, notes } = req.body;
+  const { scan_code, location_code, performed_by, notes: _notes } = req.body;
 
   if (!scan_code || !location_code || !performed_by) {
     res.status(400).json({ error: 'scan_code, location_code, and performed_by are required' });

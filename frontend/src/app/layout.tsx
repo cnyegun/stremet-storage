@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { GlobalSearch } from '@/components/ui/GlobalSearch';
 import { NavLink } from '@/components/ui/NavLink';
 import { ToastProvider } from '@/components/ui/Toast';
+import { WorkerSessionProvider, WorkerBadge } from '@/components/ui/WorkerSession';
+import { SannaChat } from '@/components/ui/SannaChat';
 import ThemeRegistry from '@/components/ThemeRegistry';
 import './globals.css';
 
@@ -21,6 +23,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       </head>
       <body>
         <ThemeRegistry>
+          <WorkerSessionProvider>
           <ToastProvider>
             <div style={{ minHeight: '100vh', backgroundColor: 'var(--mui-palette-background-default)' }}>
               <header style={{ background: '#263238', color: '#fff', borderBottom: '2px solid #1565C0' }}>
@@ -34,12 +37,14 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                       <div style={{ fontSize: 10, opacity: 0.5, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Warehouse management</div>
                     </div>
                   </Link>
+                  <WorkerBadge />
                   <GlobalSearch />
                   <nav style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
                     <NavLink href="/" label="Storage grid" />
                     <NavLink href="/items" label="Items" />
                     <NavLink href="/check-in" label="Check in" />
                     <NavLink href="/machines" label="Machines" />
+                    <NavLink href="/scan" label="Scan" />
                     <NavLink href="/activity" label="Activity" />
                   </nav>
                 </div>
@@ -47,8 +52,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               <main className="page-shell" style={{ paddingBlock: 20 }}>
                 {children}
               </main>
+              <SannaChat />
             </div>
           </ToastProvider>
+          </WorkerSessionProvider>
         </ThemeRegistry>
       </body>
     </html>

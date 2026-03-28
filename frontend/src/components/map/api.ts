@@ -2,6 +2,15 @@ import type { RackWithShelves, RackWithStats } from '@shared/types';
 import { api } from '@/lib/api';
 import type { MapCell, MapRack, WarehouseMapData } from './types';
 
+function toNumber(value: number | string | null | undefined) {
+  if (value === null || value === undefined) {
+    return 0;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function mapCellItems(items: RackWithShelves['shelves'][number]['items']) {
   return items.map((item) => ({
     id: item.assignment_id,
@@ -52,8 +61,8 @@ function mapRackSummary(rack: RackWithStats): MapRack {
     rack_type: rack.rack_type,
     row_count: rack.row_count,
     column_count: rack.column_count,
-    occupancy_used: rack.items_stored,
-    occupancy_total: rack.total_capacity,
+    occupancy_used: toNumber(rack.items_stored),
+    occupancy_total: toNumber(rack.total_capacity),
     cells: [],
   };
 }

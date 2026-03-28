@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --ext .ts,.tsx",
-    "typecheck": "rm -f tsconfig.tsbuildinfo && next typegen && tsc --noEmit --incremental false"
+    "typecheck": "rm -f tsconfig.tsbuildinfo && next typegen && tsc --noEmit --incremental false",
+    "verify": "npm run lint && npm run typecheck && npm run build"
   },
   "dependencies": {
     "@emotion/cache": "^11.14.0",
@@ -17,6 +18,7 @@
     "@mui/material": "^7.3.9",
     "@mui/material-nextjs": "^7.3.9",
     "clsx": "^2.1.1",
+    "html5-qrcode": "^2.3.8",
     "next": "^15.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

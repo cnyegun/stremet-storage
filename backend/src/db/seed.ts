@@ -1,7 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import pool from './pool';
 import { buildTrackingUnitCode } from '../lib/trackingUnits';
-import { getDefaultMachineAssignmentStatus, type MachineAssignmentStatus } from '../lib/machineAssignmentStatus';
 import { RackType } from '@shared/types';
 
 // --- Helpers ---
@@ -74,8 +73,6 @@ const WORKERS = [
   'Matti Virtanen', 'Juha Korhonen', 'Mikko Nieminen', 'Timo Mäkelä', 'Antti Hämäläinen', 
   'Pekka Laine', 'Sari Järvinen', 'Tuomas Lehtonen', 'Ville Heikkinen', 'Lauri Koskinen',
 ];
-
-const MACHINE_ASSIGNMENT_STATUSES: MachineAssignmentStatus[] = ['queued', 'processing', 'needs_attention', 'ready_for_storage'];
 
 async function seed(): Promise<void> {
   const client = await pool.connect();
