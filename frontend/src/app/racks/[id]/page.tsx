@@ -90,40 +90,40 @@ export default function RackDetailPage() {
 
       <Paper variant="outlined" sx={{ p: 2.5 }}>
         <Stack direction="row" spacing={3} flexWrap="wrap" mb={1.5}>
-          <Typography variant="body2">{rack.row_count} rows</Typography>
-          <Typography variant="body2">{rack.column_count} columns</Typography>
-          <Typography variant="body2">{rack.occupancy_used}/{rack.occupancy_total} capacity used</Typography>
+          <Typography variant="body2" fontWeight={600}>{rack.row_count} levels</Typography>
+          <Typography variant="body2" fontWeight={600}>{rack.column_count} columns</Typography>
+          <Typography variant="body2" color="text.secondary">{rack.occupancy_used.toFixed(1)} / {rack.occupancy_total.toFixed(1)} m³ total volume used</Typography>
         </Stack>
-        <OccupancyBar used={rack.occupancy_used} total={rack.occupancy_total} />
+        <OccupancyBar used={rack.occupancy_used} total={rack.occupancy_total} label="Standard Volumetric Utilization" />
       </Paper>
 
       <Paper variant="outlined">
         <TableContainer>
           <MuiTable size="small">
             <TableHead>
-              <TableRow>
-                <TableCell>Row</TableCell>
+              <TableRow sx={{ bgcolor: 'grey.50' }}>
+                <TableCell sx={{ fontWeight: 700 }}>Level</TableCell>
                 {Array.from({ length: rack.column_count }, (_, index) => (
-                  <TableCell key={index}>Column {index + 1}</TableCell>
+                  <TableCell key={index} align="center" sx={{ fontWeight: 700 }}>Col {index + 1}</TableCell>
                 ))}
               </TableRow>
             </TableHead>
             <TableBody>
               {rows.map((row) => (
                 <TableRow key={row.rowNumber}>
-                  <TableCell sx={{ fontWeight: 500 }}>Row {row.rowNumber}</TableCell>
+                  <TableCell sx={{ fontWeight: 600, bgcolor: 'grey.50' }}>Lvl {row.rowNumber}</TableCell>
                   {row.cells.map((cell) => {
-                    const palette = getOccupancyPalette(cell.current_count, cell.capacity);
-
                     return (
-                      <TableCell key={cell.id} sx={{ verticalAlign: 'top' }}>
-                        <Box sx={{ border: 1, borderColor: palette.border, bgcolor: palette.fill, p: 1, borderRadius: 1 }}>
-                          <Typography variant="body2" fontWeight={500}>{cell.current_count === 0 ? 'Empty' : `${cell.current_count} items`}</Typography>
-                          <Typography variant="caption" color="text.secondary">{cell.current_count}/{cell.capacity}</Typography>
-                          <Stack spacing={0.5} mt={1}>
+                      <TableCell key={cell.id} sx={{ verticalAlign: 'top', p: 1 }}>
+                        <Box sx={{ border: 1, borderColor: 'divider', p: 1, borderRadius: 1, minHeight: 80 }}>
+                          <OccupancyBar used={cell.current_volume_m3} total={cell.max_volume_m3} compact />
+                          <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontSize: '0.65rem' }}>
+                            {cell.current_volume_m3.toFixed(2)} m³ occupied
+                          </Typography>
+                          <Stack spacing={0.25} mt={1}>
                             {cell.items.map((item) => (
                               <Link key={item.id} href={item.item_href} style={{ textDecoration: 'none', color: 'inherit' }}>
-                                <Typography variant="caption" color="primary">{item.item_code}</Typography>
+                                <Typography sx={{ fontSize: '0.7rem', color: 'primary.main', fontWeight: 600 }}>{item.item_code}</Typography>
                               </Link>
                             ))}
                           </Stack>

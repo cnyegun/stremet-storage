@@ -205,8 +205,8 @@ export function GlobalSearch() {
                             <Typography variant="body2" fontFamily="monospace" fontWeight={600} noWrap>{m.code}</Typography>
                             <Typography variant="caption" color="text.secondary" noWrap>{m.name} — {machineCategoryLabel(m.category)}</Typography>
                           </Box>
-                          {m.active_items > 0 ? (
-                            <Typography variant="caption" color="text.secondary" flexShrink={0}>{m.active_items} items</Typography>
+                          {m.active_volume > 0 ? (
+                            <Typography variant="caption" color="text.secondary" flexShrink={0}>{m.active_volume.toFixed(1)} m³ active</Typography>
                           ) : null}
                         </Box>
                       );
@@ -238,7 +238,7 @@ export function GlobalSearch() {
                             <Typography variant="body2" fontWeight={600} noWrap>{c.name}</Typography>
                             <Typography variant="caption" color="text.secondary" noWrap>{c.code}</Typography>
                           </Box>
-                          <Typography variant="caption" color="text.secondary" flexShrink={0}>{c.items_in_storage} in storage</Typography>
+                          <Typography variant="caption" color="text.secondary" flexShrink={0}>{c.volume_in_storage.toFixed(1)} m³ in storage</Typography>
                         </Box>
                       );
                     })}
@@ -269,7 +269,7 @@ export function GlobalSearch() {
                             <Typography variant="body2" fontWeight={600} noWrap>{loc.rack_code}</Typography>
                             <Typography variant="caption" color="text.secondary" noWrap>{loc.rack_label}</Typography>
                           </Box>
-                          <Typography variant="caption" color="text.secondary" flexShrink={0}>{loc.items_stored} items</Typography>
+                          <Typography variant="caption" color="text.secondary" flexShrink={0}>{loc.volume_stored.toFixed(1)} m³ stored</Typography>
                         </Box>
                       );
                     })}

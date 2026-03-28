@@ -31,8 +31,9 @@ function mapRackFromDetail(rack: RackWithShelves): MapRack {
     id: cell.id,
     row_number: cell.row_number,
     column_number: cell.column_number,
-    capacity: toNumber(cell.capacity),
-    current_count: toNumber(cell.current_count),
+    max_volume_m3: cell.max_volume_m3,
+    current_volume_m3: cell.current_volume_m3,
+    current_count: cell.current_count,
     items: mapCellItems(cell.items),
     checkin_href: `/check-in?rack=${encodeURIComponent(rack.id)}&cell=${encodeURIComponent(cell.id)}`,
   }));
@@ -45,8 +46,8 @@ function mapRackFromDetail(rack: RackWithShelves): MapRack {
     rack_type: rack.rack_type,
     row_count: rack.row_count,
     column_count: rack.column_count,
-    occupancy_used: cells.reduce((sum, cell) => sum + cell.current_count, 0),
-    occupancy_total: cells.reduce((sum, cell) => sum + cell.capacity, 0),
+    occupancy_used: cells.reduce((sum, cell) => sum + cell.current_volume_m3, 0),
+    occupancy_total: cells.reduce((sum, cell) => sum + cell.max_volume_m3, 0),
     cells,
   };
 }
@@ -69,10 +70,10 @@ function mapRackSummary(rack: RackWithStats): MapRack {
 function buildStats(racks: MapRack[]): WarehouseMapData['stats'] {
   const totalSlots = racks.reduce((sum, rack) => sum + (rack.cells.length || rack.row_count * rack.column_count), 0);
   const occupiedSlots = racks.reduce((sum, rack) => sum + rack.cells.filter((cell) => cell.current_count > 0).length, 0);
-  const totalItemsStored = racks.reduce((sum, rack) => sum + (rack.cells.length > 0 ? rack.cells.reduce((rackSum, cell) => rackSum + cell.current_count, 0) : rack.occupancy_used), 0);
+  const totalVolumeStored = racks.reduce((sum, rack) => sum + rack.occupancy_used, 0);
 
   return {
-    total_items_stored: totalItemsStored,
+    total_items_stored: totalVolumeStored, // Using volume as the primary "stored" metric
     total_slots: totalSlots,
     occupied_slots: occupiedSlots,
     available_slots: totalSlots - occupiedSlots,

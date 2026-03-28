@@ -161,12 +161,12 @@ export default function ItemDetailPage() {
   const hasAnyLocation = trackingUnits.length > 0;
 
   const infoRows: [string, string][] = [
-    ['Tracked units', `${trackingUnits.length}`],
-    ['In storage', `${trackingUnits.filter((unit) => unit.source_type === 'shelf').reduce((sum, unit) => sum + unit.quantity, 0)} pcs`],
-    ['At machines', `${trackingUnits.filter((unit) => unit.source_type === 'machine').reduce((sum, unit) => sum + unit.quantity, 0)} pcs`],
-    ['Order quantity', `${item.quantity} pcs`],
-  ];
-
+    const summaryItems = [
+      ['Tracked units', `${trackingUnits.length}`],
+      ['In storage volume', `${trackingUnits.filter((unit) => unit.source_type === 'shelf').reduce((sum, unit) => sum + (unit.quantity * (item.volume_m3 || 0.1)), 0).toFixed(2)} m³`],
+      ['At machines volume', `${trackingUnits.filter((unit) => unit.source_type === 'machine').reduce((sum, unit) => sum + (unit.quantity * (item.volume_m3 || 0.1)), 0).toFixed(2)} m³`],
+      ['Total Item Volume', `${(item.quantity * (item.volume_m3 || 0.1)).toFixed(2)} m³`],
+    ];
   return (
     <Stack spacing={2.5}>
       {/* Header */}

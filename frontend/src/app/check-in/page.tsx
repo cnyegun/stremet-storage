@@ -81,8 +81,11 @@ export default function CheckInPage() {
   const manualShelfOptions = useMemo(
     () =>
       rackDetail?.shelves
-        .filter((cell) => cell.current_count < cell.capacity)
-        .map((cell) => ({ value: cell.id, label: `${rackDetail.code} / R${cell.row_number} / C${cell.column_number} (${cell.capacity - cell.current_count} free)` })) || [],
+        .filter((cell) => cell.current_volume_m3 < cell.max_volume_m3)
+        .map((cell) => ({ 
+          value: cell.id, 
+          label: `${rackDetail.code} / R${cell.row_number} / C${cell.column_number} (${(cell.max_volume_m3 - cell.current_volume_m3).toFixed(2)} m³ free)` 
+        })) || [],
     [rackDetail],
   );
 

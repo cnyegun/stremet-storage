@@ -9,8 +9,8 @@ interface MapStatsProps {
 export function MapStats({ stats }: MapStatsProps) {
   return (
     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-      <Chip label={`${stats.total_items_stored} items stored`} size="small" variant="outlined" />
-      <Chip label={`${stats.occupied_slots}/${stats.total_slots} slots occupied`} size="small" variant="outlined" />
+      <Chip label={`${stats.total_items_stored.toFixed(1)} m³ stored`} size="small" variant="outlined" />
+      <Chip label={`${stats.occupied_slots}/${stats.total_slots} cells occupied`} size="small" variant="outlined" />
       <Chip label={`${stats.available_slots} available`} size="small" color="success" variant="outlined" />
     </Stack>
   );
