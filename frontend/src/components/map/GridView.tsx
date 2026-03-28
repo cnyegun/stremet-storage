@@ -17,7 +17,7 @@ import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { toTitleCase } from '@/lib/utils';
+import { rackDisplayLabel } from '@/lib/utils';
 import type { MapCell, MapRack } from './types';
 import { OccupancyBar } from './OccupancyBar';
 import { getOccupancyPalette } from './utils';
@@ -101,7 +101,7 @@ export function GridView({ racks }: GridViewProps) {
               <Box flex={1}>
                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                   <Box>
-                    <Typography variant="subtitle1" fontWeight={700}>{rack.label}</Typography>
+                    <Typography variant="subtitle1" fontWeight={700}>{rackDisplayLabel(rack)}</Typography>
                     <Typography variant="caption" color="text.secondary">Standard rack · {rack.row_count}x{rack.column_count} grid</Typography>
                   </Box>
                   <Link href={`/racks/${rack.id}`} style={{ fontSize: 13, color: '#1565C0', fontWeight: 600 }}>Inspect Rack</Link>

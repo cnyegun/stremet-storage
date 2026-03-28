@@ -24,7 +24,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Select } from '@/components/ui/Select';
 import { useToast } from '@/components/ui/Toast';
 import { api } from '@/lib/api';
-import { actionLabel, formatDateTime, formatNumber, locationLabel, machineCategoryLabel } from '@/lib/utils';
+import { actionLabel, formatDateTime, formatNumber, locationLabel, machineCategoryLabel, rackDisplayLabel } from '@/lib/utils';
 
 type MoveSource = {
   type: 'shelf' | 'machine';
@@ -371,7 +371,7 @@ export default function ItemDetailPage() {
                 label="Destination rack"
                 value={selectedRackId}
                 onChange={(event: any) => { setSelectedRackId(event.target.value); setSelectedSlotId(''); }}
-                options={[{ label: 'Select rack', value: '' }, ...racks.map((rack) => ({ label: `${rack.code} - ${rack.label}`, value: rack.id }))]}
+                options={[{ label: 'Select rack', value: '' }, ...racks.map((rack) => ({ label: rackDisplayLabel(rack), value: rack.id }))]}
               />
               <Select
                 label="Destination cell"

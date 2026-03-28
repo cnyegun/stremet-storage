@@ -16,7 +16,7 @@ import { SearchBar } from '@/components/ui/SearchBar';
 import { Select } from '@/components/ui/Select';
 import { Table, type TableColumn } from '@/components/ui/Table';
 import { api } from '@/lib/api';
-import { formatDateTime } from '@/lib/utils';
+import { formatDateTime, rackDisplayLabel } from '@/lib/utils';
 
 const PAGE_SIZE = 25;
 
@@ -100,7 +100,7 @@ export default function ItemsPage() {
       <FilterBar onClear={() => setFilters({ page: 1, per_page: PAGE_SIZE, sort_by: 'created_at', sort_order: 'desc' })}>
         <Select label="Type" value={filters.type || ''} onChange={(event: any) => updateFilter({ type: (event.target.value || undefined) as ItemType | undefined })} options={[{ label: 'All types', value: '' }, { label: 'Customer order', value: 'customer_order' }, { label: 'General stock', value: 'general_stock' }]} />
         <Select label="Customer" value={filters.customer_id || ''} onChange={(event: any) => updateFilter({ customer_id: event.target.value || undefined })} options={[{ label: 'All customers', value: '' }, ...customers.map((c) => ({ label: c.name, value: c.id }))]} />
-        <Select label="Rack" value={filters.rack_id || ''} onChange={(event: any) => updateFilter({ rack_id: event.target.value || undefined })} options={[{ label: 'All racks', value: '' }, ...racks.map((rack) => ({ label: `${rack.code} - ${rack.label}`, value: rack.id }))]} />
+        <Select label="Rack" value={filters.rack_id || ''} onChange={(event: any) => updateFilter({ rack_id: event.target.value || undefined })} options={[{ label: 'All racks', value: '' }, ...racks.map((rack) => ({ label: rackDisplayLabel(rack), value: rack.id }))]} />
         <Select label="Material" value={filters.material || ''} onChange={(event: any) => updateFilter({ material: event.target.value || undefined })} options={[{ label: 'All materials', value: '' }, ...materials.map((m) => ({ label: m, value: m }))]} />
       </FilterBar>
 

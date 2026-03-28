@@ -31,7 +31,7 @@ import { Select } from '@/components/ui/Select';
 import { useToast } from '@/components/ui/Toast';
 import { useDebouncedValue } from '@/lib/hooks';
 import { api } from '@/lib/api';
-import { formatDateTime, machineAssignmentStatusLabel, machineCategoryLabel } from '@/lib/utils';
+import { formatDateTime, machineAssignmentStatusLabel, machineCategoryLabel, rackDisplayLabel } from '@/lib/utils';
 
 const categoryColors: Record<string, 'primary' | 'secondary' | 'warning' | 'error' | 'success'> = {
   sheet_metal: 'secondary',
@@ -630,8 +630,8 @@ export default function MachineDetailPage() {
                     setMoveRackId(event.target.value);
                     setMoveShelfSlotId('');
                   }}
-                  options={[{ value: '', label: 'Select rack' }, ...racks.map((rack) => ({ value: rack.id, label: `${rack.code} - ${rack.label}` }))]}
-                />
+                   options={[{ value: '', label: 'Select rack' }, ...racks.map((rack) => ({ value: rack.id, label: rackDisplayLabel(rack) }))]}
+                 />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
                 <Select

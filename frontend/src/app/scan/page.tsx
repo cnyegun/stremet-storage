@@ -15,6 +15,7 @@ import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemText from '@mui/material/ListItemText';
 import { api } from '@/lib/api';
+import { rackDisplayLabel } from '@/lib/utils';
 import { useWorkerSession } from '@/components/ui/WorkerSession';
 import type { UnitLookupResult, RackWithStats, MachineWithItemCount } from '@shared/types';
 
@@ -426,7 +427,7 @@ export default function ScanPage() {
                 {racks.map(rack => (
                   <ListItemButton key={rack.id} onClick={() => handlePickRack(rack.id, rack.code)} sx={{ py: 1.5 }}>
                     <ListItemText
-                      primary={<Typography sx={{ fontSize: 14, fontWeight: 500 }}>{rack.code} - {rack.label}</Typography>}
+                      primary={<Typography sx={{ fontSize: 14, fontWeight: 500 }}>{rackDisplayLabel(rack)}</Typography>}
                       secondary={<Typography sx={{ fontSize: 11 }}>{rack.items_stored}/{rack.total_capacity} used</Typography>}
                     />
                   </ListItemButton>

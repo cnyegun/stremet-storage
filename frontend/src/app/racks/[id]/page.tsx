@@ -19,7 +19,7 @@ import { getRackMapData } from '@/components/map/api';
 import { OccupancyBar } from '@/components/map/OccupancyBar';
 import type { MapCell, MapRack } from '@/components/map/types';
 import { getOccupancyPalette } from '@/components/map/utils';
-import { toTitleCase } from '@/lib/utils';
+import { rackDisplayLabel, toTitleCase } from '@/lib/utils';
 
 function groupCellsByRow(rack: MapRack) {
   const rows = new Map<number, MapCell[]>();
@@ -78,8 +78,8 @@ export default function RackDetailPage() {
       <Paper variant="outlined" sx={{ p: 2.5 }}>
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} spacing={2}>
           <Box>
-            <Typography variant="h3">{rack.code}</Typography>
-            <Typography variant="body2" color="text.secondary">{rack.label} • {toTitleCase(rack.rack_type)}</Typography>
+            <Typography variant="h3">{rackDisplayLabel(rack)}</Typography>
+            <Typography variant="body2" color="text.secondary">{toTitleCase(rack.rack_type)}</Typography>
             {rack.description ? <Typography variant="caption" color="text.secondary">{rack.description}</Typography> : null}
           </Box>
           <Link href={`/check-in?rack=${encodeURIComponent(rack.id)}`} style={{ fontSize: 13, color: '#1565C0' }}>
