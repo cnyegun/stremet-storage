@@ -138,28 +138,31 @@ async function seed(): Promise<void> {
         await client.query(
           `INSERT INTO racks (id, zone_id, code, label, description, rack_type, row_count, column_count, display_order, position_in_zone, total_shelves)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-          [id, zoneIds[z.code], code, label, z.description, buildRackTypeFromZone(z.code, z.name), 4, 1, r, r, 4]
+          [id, zoneIds[z.code], code, label, z.description, buildRackTypeFromZone(z.code, z.name), 4, 10, r, r, 40]
         );
       }
     }
     console.log('  racks: 25');
 
-    // --- Shelf slots (4 per rack) ---
-    interface SlotRecord { id: string; rackId: string; zoneCode: string; rackNum: number; shelfNum: number; capacity: number }
+    // --- Shelf slots (4 rows x 10 columns per rack) ---
+    interface SlotRecord { id: string; rackId: string; zoneCode: string; rackNum: number; rowNum: number; colNum: number; capacity: number }
     const slots: SlotRecord[] = [];
     for (const rack of racks) {
-      for (let s = 1; s <= 4; s++) {
-        const id = uuidv4();
-        const capacity = randomInt(6, 12);
-        slots.push({ id, rackId: rack.id, zoneCode: rack.zoneCode, rackNum: rack.rackNum, shelfNum: s, capacity });
-        await client.query(
-          `INSERT INTO shelf_slots (id, rack_id, shelf_number, row_number, column_number, capacity, current_count)
-           VALUES ($1, $2, $3, $4, $5, $6, 0)`,
-          [id, rack.id, s, s, 1, capacity]
-        );
+      for (let r = 1; r <= 4; r++) {
+        for (let c = 1; c <= 10; c++) {
+          const id = uuidv4();
+          const capacity = randomInt(6, 12);
+          const shelfNumber = (r - 1) * 10 + c;
+          slots.push({ id, rackId: rack.id, zoneCode: rack.zoneCode, rackNum: rack.rackNum, rowNum: r, colNum: c, capacity });
+          await client.query(
+            `INSERT INTO shelf_slots (id, rack_id, shelf_number, row_number, column_number, capacity, current_count, max_height, max_weight_kg)
+             VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8)`,
+            [id, rack.id, shelfNumber, r, c, capacity, randomChoice([400, 600, 800, 1000]), randomInt(500, 1500)]
+          );
+        }
       }
     }
-    console.log('  shelf_slots: 100');
+    console.log('  shelf_slots (cells): 1000');
 
     // --- Customers ---
     const customerIds: Record<string, string> = {};

@@ -258,14 +258,19 @@ itemsRouter.get('/duplicate-check', asyncHandler(async (req, res) => {
   res.json({ data: result.rows[0] || null });
 }));
 
+import { OptimizerService } from '../services/optimizerService';
+
 // GET /api/items/:id/suggest-location — smart location suggestion
 itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  // Get item info
+  // 1. Get detailed item info, including next machine location
   const itemResult = await pool.query(`
-    SELECT i.*, c.code AS customer_code FROM items i
+    SELECT i.*, c.code AS customer_code, 
+           m.position_x as next_x, m.position_y as next_y
+    FROM items i
     LEFT JOIN customers c ON i.customer_id = c.id
+    LEFT JOIN machines m ON i.next_machine_id = m.id
     WHERE i.id = $1
   `, [id]);
 
@@ -274,74 +279,126 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
     return;
   }
 
-    const item = itemResult.rows[0];
+  const item = itemResult.rows[0];
+  
+  // Parse dimensions and fix height (Gravity Fix)
+  const dimsStr = (item.dimensions || '0x0x0').toLowerCase().replace('mm', '');
+  const dims = dimsStr.split('x').map((d: string) => parseFloat(d.trim())).sort((a: number, b: number) => a - b);
+  
+  const itemHeight = dims[0] || 0;
+  const itemMaxFootprint = dims[2] || 0;
+  const itemMinFootprint = dims[1] || 0;
+  const itemWeightTotal = (Number(item.weight_kg) || 0) * (Number(item.quantity) || 1);
 
+  // Map item type to preferred rack type
   const preferredRackType = item.type === 'general_stock' ? 'general_stock' : 'customer_orders';
 
-  // Find all available rack cells with rack routing and customer proximity score
+  // 2. High-performance SQL Filter (Hard Constraints)
   const slotsResult = await pool.query(`
     SELECT
       ss.id AS shelf_slot_id,
-      r.id AS rack_id,
-      r.code AS rack_code,
-      r.label AS rack_label,
+      ss.rack_id,
       ss.row_number,
       ss.column_number,
-      ss.capacity - ss.current_count AS available_capacity,
-      r.rack_type = $1 AS is_preferred_rack_type,
-      (
-        SELECT COUNT(*)::int
-        FROM storage_assignments sa2
-        JOIN items i2 ON sa2.item_id = i2.id
-        WHERE sa2.shelf_slot_id IN (
-          SELECT ss2.id FROM shelf_slots ss2 WHERE ss2.rack_id = r.id
-        )
-        AND sa2.checked_out_at IS NULL
-        AND i2.customer_id = $2
-      ) AS same_customer_count
+      ss.capacity,
+      ss.current_count,
+      ss.current_weight_kg,
+      ss.max_weight_kg,
+      ss.max_height,
+      r.code AS rack_code,
+      r.rack_type,
+      z.position_x AS zone_x,
+      z.position_y AS zone_y
     FROM shelf_slots ss
     JOIN racks r ON ss.rack_id = r.id
-    WHERE ss.current_count < ss.capacity
-    ORDER BY
-      (r.rack_type = $1) DESC,
-      (
-        SELECT COUNT(*)
-        FROM storage_assignments sa2
-        JOIN items i2 ON sa2.item_id = i2.id
-        WHERE sa2.shelf_slot_id IN (
-          SELECT ss2.id FROM shelf_slots ss2 WHERE ss2.rack_id = r.id
-        )
-        AND sa2.checked_out_at IS NULL
-        AND i2.customer_id = $2
-      ) DESC,
-      (ss.capacity - ss.current_count) DESC
-    LIMIT 3
-  `, [preferredRackType, item.customer_id]);
+    JOIN zones z ON r.zone_id = z.id
+    WHERE 
+      -- Physical Room (Count)
+      (ss.capacity - ss.current_count) >= $1
+      -- Weight Limit (Dynamic Scale Check)
+      AND (ss.max_weight_kg - ss.current_weight_kg) >= $2
+      -- Vertical Clearance (Gravity Fix)
+      AND ss.max_height >= $3
+      -- Footprint Clearance
+      AND GREATEST(ss.max_length, ss.max_width) >= $4
+      AND LEAST(ss.max_length, ss.max_width) >= $5
+      -- Stackability Logic
+      AND (($6 = FALSE AND ss.current_count = 0) OR ($6 = TRUE))
+      -- Zone Filtering based on Rack Type
+      AND (r.rack_type = $7 OR r.rack_type IN ('work_in_progress', 'finished_goods', 'raw_materials')) 
+    ORDER BY (r.rack_type = $7) DESC
+  `, [item.quantity, itemWeightTotal, itemHeight, itemMaxFootprint, itemMinFootprint, item.is_stackable ?? true, preferredRackType]);
 
-  const suggestions = slotsResult.rows.map((row: Record<string, unknown>, idx: number) => {
-    const reasons: string[] = [];
-    if (row.is_preferred_rack_type) {
-      reasons.push(`Preferred rack type for ${item.type === 'general_stock' ? 'general stock' : 'customer orders'}`);
-    }
-    if ((row.same_customer_count as number) > 0) {
-      reasons.push(`${row.same_customer_count} other ${item.customer_code || 'customer'} items on this rack`);
-    }
-    reasons.push(`${row.available_capacity} slots available`);
+  // 3. Score and Sort using OptimizerService
+  const destination = item.next_x ? { x: item.next_x, y: item.next_y } : undefined;
+  
+  const suggestions = slotsResult.rows
+    .map(slot => {
+      const score = OptimizerService.scoreSlot(
+        {
+          shelf_slot_id: slot.shelf_slot_id,
+          rack_id: slot.rack_id,
+          row_number: slot.row_number,
+          column_number: slot.column_number,
+          capacity: slot.capacity,
+          current_count: slot.current_count,
+          current_weight_kg: Number(slot.current_weight_kg),
+          max_weight_kg: Number(slot.max_weight_kg),
+          max_height: slot.max_height,
+          rack_code: slot.rack_code,
+          rack_type: slot.rack_type,
+          zone_x: slot.zone_x,
+          zone_y: slot.zone_y
+        }, 
+        {
+          weight_kg: Number(item.weight_kg),
+          turnover_class: (item.turnover_class || 'C') as 'A' | 'B' | 'C',
+          quantity: Number(item.quantity),
+          is_stackable: item.is_stackable ?? true
+        },
+        undefined, 
+        destination
+      );
 
-    return {
-      shelf_slot_id: row.shelf_slot_id,
-      rack_id: row.rack_id,
-      rack_code: row.rack_code,
-      rack_label: row.rack_label,
-      row_number: row.row_number,
-      column_number: row.column_number,
-      available_capacity: row.available_capacity,
-      reason: reasons.join('. '),
-      score: 100 - idx * 20,
-    };
-  });
+      return {
+        ...slot,
+        score
+      };
+    })
+    .sort((a, b) => a.score - b.score)
+    .slice(0, 3)
+    .map(s => {
+      const reasons: string[] = [];
+      if (item.turnover_class === 'A' && [2, 3].includes(s.row_number)) {
+        reasons.push("Optimized for high-frequency access (Golden Zone)");
+      }
+      if (item.weight_kg > 25 && s.row_number <= 2) {
+        reasons.push("Ergonomic placement for heavy goods");
+      }
+      if (destination) {
+        reasons.push("Proximate to next production stage");
+      }
+      reasons.push(`${s.capacity - s.current_count} units available`);
 
-  res.json({ data: suggestions });
+      return {
+        shelf_slot_id: s.shelf_slot_id,
+        rack_code: s.rack_code,
+        row_number: s.row_number,
+        column_number: s.column_number,
+        available_capacity: s.capacity - s.current_count,
+        reason: reasons.length > 0 ? reasons.join('. ') : "Standard optimized storage.",
+        score: Math.round(100 - (s.score / 10))
+      };
+    });
+
+  if (suggestions.length === 0) {
+    res.json({ 
+      data: [], 
+      error: "No valid storage locations found that meet physical constraints." 
+    });
+  } else {
+    res.json({ data: suggestions });
+  }
 }));
 
 // GET /api/items/:id — item detail with location and history
@@ -583,16 +640,18 @@ itemsRouter.post('/check-in', asyncHandler(async (req, res) => {
 
     // Create assignment
     const assignmentId = uuidv4();
+    const qty = quantity || 1;
     await client.query(
       `INSERT INTO storage_assignments (id, item_id, shelf_slot_id, unit_code, quantity, checked_in_by, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [assignmentId, item_id, shelf_slot_id, unitCode, quantity || 1, checked_in_by, notes || null]
+      [assignmentId, item_id, shelf_slot_id, unitCode, qty, checked_in_by, notes || null]
     );
 
-    // Update shelf count
+    // Update shelf count and weight
+    const weightToAdd = (Number(itemResult.rows[0].weight_kg) || 0) * qty;
     await client.query(
-      'UPDATE shelf_slots SET current_count = current_count + 1, updated_at = NOW() WHERE id = $1',
-      [shelf_slot_id]
+      'UPDATE shelf_slots SET current_count = current_count + 1, current_weight_kg = current_weight_kg + $1, updated_at = NOW() WHERE id = $2',
+      [weightToAdd, shelf_slot_id]
     );
 
     // Get location string for activity log
@@ -692,9 +751,11 @@ itemsRouter.post('/check-out', asyncHandler(async (req, res) => {
         [checked_out_by, notes || null, assignment_id]
       );
 
+      // Update shelf count and weight
+      const weightToSubtract = (Number(assignment.weight_kg) || 0) * (Number(assignment.quantity) || 1);
       await client.query(
-        'UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), updated_at = NOW() WHERE id = $1',
-        [assignment.slot_id]
+        'UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), current_weight_kg = GREATEST(current_weight_kg - $1, 0), updated_at = NOW() WHERE id = $2',
+        [weightToSubtract, assignment.slot_id]
       );
     }
 
