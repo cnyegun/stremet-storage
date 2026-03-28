@@ -9,6 +9,7 @@ import { statsRouter } from './routes/stats';
 import { customersRouter } from './routes/customers';
 import { machinesRouter } from './routes/machines';
 import { sensorsRouter } from './routes/sensors';
+import { qrLifecycleRouter } from './routes/qrLifecycle';
 import { unitsRouter } from './routes/units';
 import { errorHandler } from './middleware/errorHandler';
 
@@ -38,6 +39,7 @@ app.use('/api/customers', customersRouter);
 app.use('/api/machines', machinesRouter);
 app.use('/api/units', unitsRouter);
 app.use('/api/sensors', sensorsRouter);
+app.use('/api/qr', qrLifecycleRouter);
 
 // Global error handler (must be after routes)
 app.use(errorHandler);
