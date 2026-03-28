@@ -5,14 +5,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const pg_1 = require("pg");
 const dotenv_1 = __importDefault(require("dotenv"));
-// Load .env if it exists, but don't overwrite existing process.env variables
 dotenv_1.default.config();
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) {
-    console.error('DATABASE_URL is not set in environment variables');
-}
 const pool = new pg_1.Pool({
-    connectionString: databaseUrl,
+    connectionString: process.env.DATABASE_URL,
 });
 pool.on('error', (err) => {
     console.error('Unexpected error on idle client', err);

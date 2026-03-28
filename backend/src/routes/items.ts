@@ -104,7 +104,15 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
   const itemResult = await pool.query('SELECT * FROM items WHERE id = $1', [id]);
   if (itemResult.rows.length === 0) { res.status(404).json({ error: 'Item not found' }); return; }
   const item = itemResult.rows[0];
-
+  
+  // Parse dimensions and fix height (Gravity Fix)
+  const dimsStr = (item.dimensions || '0x0x0').toLowerCase().replace('mm', '');
+  const dims = dimsStr.split('x').map((d: string) => parseFloat(d.trim())).sort((a: number, b: number) => a - b);
+  
+  const itemHeight = dims[0] || 0;
+  const itemMaxFootprint = dims[2] || 0;
+  const itemMinFootprint = dims[1] || 0;
+  // 2. High-performance SQL Filter (Hard Constraints)
   const slotsResult = await pool.query(`
     SELECT ss.*, r.code as rack_code, r.display_order, r.position_x, r.position_y
     FROM shelf_slots ss JOIN racks r ON ss.rack_id = r.id

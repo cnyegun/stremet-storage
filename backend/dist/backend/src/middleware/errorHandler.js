@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.errorHandler = errorHandler;
 function errorHandler(err, _req, res, next) {
     void next;
-    console.error('[ERROR]', err);
+    console.error(`[ERROR] ${err.message}`);
     // PostgreSQL invalid input syntax (e.g., malformed UUID)
     if (err.code === '22P02') {
         res.status(400).json({ error: 'Invalid ID format' });

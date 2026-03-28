@@ -31,9 +31,10 @@ function mapRackFromDetail(rack: RackWithShelves): MapRack {
     id: cell.id,
     row_number: cell.row_number,
     column_number: cell.column_number,
-    max_volume_m3: cell.max_volume_m3,
-    current_volume_m3: cell.current_volume_m3,
-    current_count: cell.current_count,
+    capacity: toNumber(cell.capacity),
+    max_volume_m3: toNumber(cell.max_volume_m3),
+    current_volume_m3: toNumber(cell.current_volume_m3),
+    current_count: toNumber(cell.current_count),
     items: mapCellItems(cell.items),
     checkin_href: `/check-in?rack=${encodeURIComponent(rack.id)}&cell=${encodeURIComponent(cell.id)}`,
   }));
@@ -75,7 +76,7 @@ function buildStats(racks: MapRack[]): WarehouseMapData['stats'] {
   const totalVolumeStored = racks.reduce((sum, rack) => sum + rack.occupancy_used, 0);
 
   return {
-    total_items_stored: totalVolumeStored, // Using volume as the primary "stored" metric
+    total_items_stored: totalItemsStored,
     total_slots: totalSlots,
     occupied_slots: occupiedSlots,
     available_slots: totalSlots - occupiedSlots,

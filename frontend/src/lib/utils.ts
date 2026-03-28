@@ -8,6 +8,10 @@ type LocationInput = {
   column_number?: number | null;
 };
 
+type RackLabelInput = {
+  code: string;
+};
+
 export function cn(...inputs: ClassValue[]) {
   return clsx(inputs);
 }
@@ -78,6 +82,10 @@ export function machineAssignmentStatusLabel(status: string) {
     ready_for_storage: 'Ready for storage',
   };
   return labels[status] || toTitleCase(status);
+}
+
+export function rackDisplayLabel(rack: RackLabelInput) {
+  return rack.code;
 }
 
 export function toTitleCase(value: string) {

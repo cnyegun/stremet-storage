@@ -24,7 +24,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Select } from '@/components/ui/Select';
 import { useToast } from '@/components/ui/Toast';
 import { api } from '@/lib/api';
-import { actionLabel, formatDateTime, formatNumber, locationLabel, machineCategoryLabel } from '@/lib/utils';
+import { actionLabel, formatDateTime, formatNumber, locationLabel, machineCategoryLabel, rackDisplayLabel } from '@/lib/utils';
 
 type MoveSource = {
   type: 'shelf' | 'machine';
@@ -161,12 +161,12 @@ export default function ItemDetailPage() {
   const hasAnyLocation = trackingUnits.length > 0;
 
   const infoRows: [string, string][] = [
-    const summaryItems = [
-      ['Tracked units', `${trackingUnits.length}`],
-      ['In storage volume', `${trackingUnits.filter((unit) => unit.source_type === 'shelf').reduce((sum, unit) => sum + (unit.quantity * (item.volume_m3 || 0.1)), 0).toFixed(2)} m³`],
-      ['At machines volume', `${trackingUnits.filter((unit) => unit.source_type === 'machine').reduce((sum, unit) => sum + (unit.quantity * (item.volume_m3 || 0.1)), 0).toFixed(2)} m³`],
-      ['Total Item Volume', `${(item.quantity * (item.volume_m3 || 0.1)).toFixed(2)} m³`],
-    ];
+    ['Tracked units', `${trackingUnits.length}`],
+    ['In storage', `${trackingUnits.filter((unit) => unit.source_type === 'shelf').reduce((sum, unit) => sum + unit.quantity, 0)} pcs`],
+    ['At machines', `${trackingUnits.filter((unit) => unit.source_type === 'machine').reduce((sum, unit) => sum + unit.quantity, 0)} pcs`],
+    ['Order quantity', `${item.quantity} pcs`],
+  ];
+
   return (
     <Stack spacing={2.5}>
       {/* Header */}
@@ -371,7 +371,7 @@ export default function ItemDetailPage() {
                 label="Destination rack"
                 value={selectedRackId}
                 onChange={(event: any) => { setSelectedRackId(event.target.value); setSelectedSlotId(''); }}
-                options={[{ label: 'Select rack', value: '' }, ...racks.map((rack) => ({ label: `${rack.code} - ${rack.label}`, value: rack.id }))]}
+                options={[{ label: 'Select rack', value: '' }, ...racks.map((rack) => ({ label: rackDisplayLabel(rack), value: rack.id }))]}
               />
               <Select
                 label="Destination cell"

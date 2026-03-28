@@ -25,6 +25,7 @@ import { LocationBadge } from '@/components/ui/LocationBadge';
 import { Select } from '@/components/ui/Select';
 import { useToast } from '@/components/ui/Toast';
 import { api } from '@/lib/api';
+import { rackDisplayLabel } from '@/lib/utils';
 
 type FlowState = 'lookup' | 'duplicate' | 'details' | 'location' | 'confirm' | 'success';
 
@@ -270,7 +271,7 @@ export default function CheckInPage() {
               <Grid size={{ xs: 12, lg: 4 }}>
                 <Paper variant="outlined" sx={{ p: 2, bgcolor: 'grey.50' }}>
                   <Stack spacing={2}>
-                    <Select label="Rack" value={selectedRackId} onChange={(e: any) => setSelectedRackId(e.target.value)} options={[{ label: 'Select rack', value: '' }, ...racks.map((rack) => ({ label: `${rack.code} - ${rack.label}`, value: rack.id }))]} />
+                    <Select label="Rack" value={selectedRackId} onChange={(e: any) => setSelectedRackId(e.target.value)} options={[{ label: 'Select rack', value: '' }, ...racks.map((rack) => ({ label: rackDisplayLabel(rack), value: rack.id }))]} />
                     <Select label="Cell" value={selectedShelfSlotId} onChange={(e: any) => { setSelectedShelfSlotId(e.target.value); if (e.target.value) setFlow('confirm'); }} options={[{ label: 'Select cell', value: '' }, ...manualShelfOptions]} />
                   </Stack>
                 </Paper>

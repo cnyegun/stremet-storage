@@ -106,7 +106,11 @@ trackingRouter.get('/unit/:unitCode', asyncHandler(async (req, res) => {
  * Handles Product QR + Location QR interactions
  */
 trackingRouter.post('/scan', asyncHandler(async (req, res) => {
-  const { scan_code, location_code, performed_by, notes: _notes } = req.body;
+  const { scan_code, location_code, performed_by } = req.body as {
+    scan_code?: string;
+    location_code?: string;
+    performed_by?: string;
+  };
 
   if (!scan_code || !location_code || !performed_by) {
     res.status(400).json({ error: 'scan_code, location_code, and performed_by are required' });
@@ -121,7 +125,13 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
     const isUnit = scan_code.includes('-U');
     let unitCode = scan_code;
     let itemId: string | null = null;
-    let currentAssignment: any = null;
+    let currentAssignment: {
+      id: string;
+      item_id: string;
+      shelf_slot_id?: string;
+      machine_id?: string;
+      status?: string;
+    } | null = null;
     let sourceType: 'shelf' | 'machine' | null = null;
 
     if (isUnit) {
@@ -138,11 +148,11 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
         if (saResult.rows.length > 0) {
             currentAssignment = saResult.rows[0];
             sourceType = 'shelf';
-            itemId = currentAssignment.item_id;
+            itemId = saResult.rows[0].item_id;
         } else if (maResult.rows.length > 0) {
             currentAssignment = maResult.rows[0];
             sourceType = 'machine';
-            itemId = currentAssignment.item_id;
+            itemId = maResult.rows[0].item_id;
         }
     }
 
@@ -154,16 +164,17 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
         const machine = machineResult.rows[0];
 
         // Case A: Toggle Status (Already at this machine)
-        if (sourceType === 'machine' && currentAssignment.machine_id === machine.id) {
-            const statusMap: Record<string, any> = {
+        if (sourceType === 'machine' && currentAssignment?.machine_id === machine.id) {
+            const assignment = currentAssignment!;
+            const statusMap: Record<string, string> = {
                 'queued': 'processing',
                 'processing': 'ready_for_storage',
                 'ready_for_storage': 'processing', // Loop back or keep same
                 'needs_attention': 'processing'
             };
-            const nextStatus = statusMap[currentAssignment.status] || 'processing';
+            const nextStatus = statusMap[assignment.status || ''] || 'processing';
             
-            await client.query('UPDATE machine_assignments SET status = $1, updated_at = NOW() WHERE id = $2', [nextStatus, currentAssignment.id]);
+            await client.query('UPDATE machine_assignments SET status = $1, updated_at = NOW() WHERE id = $2', [nextStatus, assignment.id]);
             await client.query(
                 `INSERT INTO activity_log (id, item_id, action, from_location, to_location, performed_by, notes)
                  VALUES ($1, $2, 'note_added', $3, $4, $5, $6)`,
@@ -189,6 +200,7 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
         } else {
             // Move existing unit from somewhere else to machine
             // Checkout from old
+            if (!currentAssignment) throw new Error('Unit not found or active.');
             if (sourceType === 'shelf') {
                 await client.query('UPDATE storage_assignments SET checked_out_at = NOW(), checked_out_by = $1 WHERE id = $2', [performed_by, currentAssignment.id]);
                 await client.query('UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0) WHERE id = $1', [currentAssignment.shelf_slot_id]);
@@ -230,6 +242,7 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
     if (shelfResult.rows.length > 0) {
         const shelf = shelfResult.rows[0];
         if (!isUnit) throw new Error("Cannot move a template to storage. Check into a machine first to generate a Unit ID.");
+        if (!currentAssignment) throw new Error('Unit not found or active.');
 
         // Checkout from old
         if (sourceType === 'machine') {

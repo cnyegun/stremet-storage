@@ -388,6 +388,82 @@ export interface MoveRequest {
   quantity?: number;
 }
 
+export type ActionProposal =
+  | {
+      action: 'check_in';
+      item_id: string;
+      item_code: string;
+      shelf_slot_id: string;
+      location: string;
+      quantity: number;
+      notes?: string;
+    }
+  | {
+      action: 'check_out';
+      assignment_id: string;
+      unit_code: string;
+      source_type: 'shelf' | 'machine';
+      location: string;
+      item_code: string;
+      notes?: string;
+    }
+  | {
+      action: 'move';
+      assignment_id: string;
+      unit_code: string;
+      source_type: 'shelf' | 'machine';
+      from: string;
+      to: string;
+      to_shelf_slot_id?: string;
+      to_machine_id?: string;
+      quantity?: number;
+      notes?: string;
+    };
+
+export interface AssistantRequest {
+  message: string;
+  imageBase64?: string;
+  history: { role: 'user' | 'assistant'; content: string }[];
+  workerName?: string;
+}
+
+export interface AssistantResponse {
+  message: string;
+  sql?: string;
+  data?: Record<string, unknown>[];
+  rowCount?: number;
+  action?: ActionProposal;
+}
+
+export interface UnitLookupResult {
+  source_type: 'shelf' | 'machine';
+  assignment_id: string;
+  unit_code: string;
+  quantity: number;
+  item_id: string;
+  item_code: string;
+  item_name: string;
+  material: string;
+  weight_kg: number;
+  customer_name: string | null;
+  customer_code: string | null;
+  location: string;
+  rack_id?: string;
+  rack_code?: string;
+  shelf_slot_id?: string;
+  row_number?: number;
+  column_number?: number;
+  checked_in_at?: string;
+  checked_in_by?: string;
+  machine_id?: string;
+  machine_code?: string;
+  machine_name?: string;
+  machine_category?: MachineCategory;
+  status?: MachineAssignmentStatus;
+  assigned_at?: string;
+  assigned_by?: string;
+}
+
 export interface CreateItemRequest {
   item_code: string;
   customer_id?: string;

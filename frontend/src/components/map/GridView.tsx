@@ -17,7 +17,7 @@ import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { toTitleCase } from '@/lib/utils';
+import { rackDisplayLabel } from '@/lib/utils';
 import type { MapCell, MapRack } from './types';
 import { OccupancyBar } from './OccupancyBar';
 import { getOccupancyPalette } from './utils';
@@ -71,9 +71,10 @@ export function GridView({ racks }: GridViewProps) {
             ) : (
               cell.items.map((item) => (
                 <Link key={item.id} href={item.item_href} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
-                  <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 0.5, '&:hover': { bgcolor: 'action.hover' } }}>
-                    <Typography variant="body2" fontWeight={700} color="primary" sx={{ fontSize: '0.75rem' }}>{item.item_code}</Typography>
-                    <Typography variant="caption" sx={{ fontSize: '0.65rem' }}>{item.volume_m3?.toFixed(2)} m³</Typography>
+                  <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 0.5, '&:hover': { bgcolor: 'action.hover' }, borderRadius: 0.5, px: 0.5, mx: -0.5 }}>
+                    <Typography variant="body2" fontWeight={500} color="primary" sx={{ fontSize: '0.75rem' }}>{item.item_code}</Typography>
+                    <Typography variant="caption" display="block">{item.name}</Typography>
+                    <Typography variant="caption" color="text.secondary">{item.customer_name ?? 'General stock'}</Typography>
                   </Box>
                 </Link>
               ))
@@ -101,7 +102,7 @@ export function GridView({ racks }: GridViewProps) {
               <Box flex={1}>
                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                   <Box>
-                    <Typography variant="subtitle1" fontWeight={700}>{rack.label}</Typography>
+                    <Typography variant="subtitle1" fontWeight={700}>{rackDisplayLabel(rack)}</Typography>
                     <Typography variant="caption" color="text.secondary">Standard rack · {rack.row_count}x{rack.column_count} grid</Typography>
                   </Box>
                   <Link href={`/racks/${rack.id}`} style={{ fontSize: 13, color: '#1565C0', fontWeight: 600 }}>Inspect Rack</Link>

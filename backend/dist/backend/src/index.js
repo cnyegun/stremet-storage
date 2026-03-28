@@ -23,12 +23,7 @@ app.use((0, cors_1.default)({
     origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
 }));
-app.use(express_1.default.json({ limit: '2mb' }));
-// Debug logging middleware
-app.use((req, _res, next) => {
-    console.log(`[DEBUG] ${req.method} ${req.url}`);
-    next();
-});
+app.use(express_1.default.json());
 // Health check
 app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok' });
@@ -45,15 +40,6 @@ app.use('/api/machines', machines_1.machinesRouter);
 app.use('/api/assistant', assistant_1.assistantRouter);
 // Global error handler (must be after routes)
 app.use(errorHandler_1.errorHandler);
-// Fallback error handler
-app.use((err, _req, res, _next) => {
-    console.error('[FALLBACK ERROR]', err);
-    res.status(500).json({
-        error: 'Internal server error',
-        details: err.message,
-        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    });
-});
 app.listen(PORT, () => {
     console.log(`Stremet API running on http://localhost:${PORT}`);
 });

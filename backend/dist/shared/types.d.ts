@@ -27,6 +27,7 @@ export interface ShelfSlot {
     shelf_number: number;
     row_number: number;
     column_number: number;
+    capacity: number;
     width_m: number;
     depth_m: number;
     height_m: number;
@@ -162,6 +163,7 @@ export interface RackCellItem {
     item_name: string;
     customer_name: string | null;
     material: string;
+    volume_m3?: number;
     quantity: number;
     checked_in_at: string;
     checked_in_by: string;
@@ -277,20 +279,20 @@ export interface GlobalSearchLocation {
     rack_code: string;
     rack_label: string;
     rack_type: RackType;
-    items_stored: number;
+    volume_stored: number;
 }
 export interface GlobalSearchCustomer {
     id: string;
     name: string;
     code: string;
-    items_in_storage: number;
+    volume_in_storage: number;
 }
 export interface GlobalSearchMachine {
     id: string;
     name: string;
     code: string;
     category: MachineCategory | string;
-    active_items: number;
+    active_volume: number;
 }
 export interface GlobalSearchResponse {
     items: ItemWithLocation[];
@@ -302,7 +304,7 @@ export interface WarehouseStats {
     total_racks: number;
     total_slots: number;
     total_capacity: number;
-    items_stored: number;
+    volume_stored: number;
     slots_in_use: number;
     occupancy_percent: number;
     racks: RackWithStats[];
@@ -328,18 +330,6 @@ export interface MoveRequest {
     performed_by: string;
     notes?: string;
     quantity?: number;
-}
-export interface CreateItemRequest {
-    item_code: string;
-    customer_id?: string;
-    name: string;
-    description?: string;
-    material: string;
-    dimensions?: string;
-    weight_kg?: number;
-    type: ItemType;
-    order_number?: string;
-    quantity: number;
 }
 export type ActionProposal = {
     action: 'check_in';
@@ -384,6 +374,46 @@ export interface AssistantResponse {
     data?: Record<string, unknown>[];
     rowCount?: number;
     action?: ActionProposal;
+}
+export interface UnitLookupResult {
+    source_type: 'shelf' | 'machine';
+    assignment_id: string;
+    unit_code: string;
+    quantity: number;
+    item_id: string;
+    item_code: string;
+    item_name: string;
+    material: string;
+    weight_kg: number;
+    customer_name: string | null;
+    customer_code: string | null;
+    location: string;
+    rack_id?: string;
+    rack_code?: string;
+    shelf_slot_id?: string;
+    row_number?: number;
+    column_number?: number;
+    checked_in_at?: string;
+    checked_in_by?: string;
+    machine_id?: string;
+    machine_code?: string;
+    machine_name?: string;
+    machine_category?: MachineCategory;
+    status?: MachineAssignmentStatus;
+    assigned_at?: string;
+    assigned_by?: string;
+}
+export interface CreateItemRequest {
+    item_code: string;
+    customer_id?: string;
+    name: string;
+    description?: string;
+    material: string;
+    dimensions?: string;
+    weight_kg?: number;
+    type: ItemType;
+    order_number?: string;
+    quantity: number;
 }
 export interface UpdateItemRequest {
     name?: string;
