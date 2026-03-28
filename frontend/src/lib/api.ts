@@ -35,6 +35,42 @@ type MoveResult = {
   quantity_remaining: number;
 };
 type MachineStatusUpdateResult = { assignment_id: string; unit_code: string; status: string };
+type QrScanResult = {
+  qr_code: string;
+  scan_url: string;
+  qr_type: string;
+  status: string;
+  item_id: string | null;
+  item_code: string | null;
+  item_name: string | null;
+  customer_name: string | null;
+  active_unit_code: string | null;
+  quantity: number;
+  location_code: string | null;
+  location_type: string;
+  order_number: string | null;
+  manufacturing_date: string | null;
+  recommended_rack_id: string | null;
+  recommended_shelf_slot_id: string | null;
+  recommended_location_code: string | null;
+  order_progress: {
+    requested_quantity: number;
+    fulfilled_quantity: number;
+    status: string;
+  } | null;
+};
+type ProductQrIntakeResult = {
+  qr_code: string;
+  scan_url: string;
+  unit_code: string;
+  assignment_id: string;
+  location_code: string;
+  rerouted: boolean;
+  rack_code: string;
+  rack_label: string;
+  row_number: number;
+  column_number: number;
+};
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000/api';
 
@@ -123,4 +159,18 @@ export const api = {
   getStats: () => request<ApiResponse<WarehouseStats>>('/stats'),
 
   globalSearch: (query: string) => request<ApiResponse<GlobalSearchResponse>>(`/search?q=${encodeURIComponent(query)}`),
+
+  getQrScanResult: (qrCode: string) => request<ApiResponse<QrScanResult>>(`/qr/${encodeURIComponent(qrCode)}`),
+
+  intakeProductQr: (body: {
+    qr_code: string;
+    performed_by: string;
+    notes?: string;
+    preferred_rack_id?: string;
+    preferred_shelf_slot_id?: string;
+  }) =>
+    request<ApiResponse<ProductQrIntakeResult>>('/qr/product-intake', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 };
