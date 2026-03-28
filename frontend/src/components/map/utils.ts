@@ -1,12 +1,24 @@
-export function getOccupancyRatio(used: number, total: number) {
-  if (!total) {
+function toNumber(value: number | string | null | undefined) {
+  if (value === null || value === undefined) {
     return 0;
   }
 
-  return used / total;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
-export function getOccupancyState(used: number, total: number) {
+export function getOccupancyRatio(used: number | string, total: number | string) {
+  const usedValue = toNumber(used);
+  const totalValue = toNumber(total);
+
+  if (!totalValue) {
+    return 0;
+  }
+
+  return usedValue / totalValue;
+}
+
+export function getOccupancyState(used: number | string, total: number | string) {
   const ratio = getOccupancyRatio(used, total);
 
   if (ratio > 0.8) {
@@ -20,7 +32,7 @@ export function getOccupancyState(used: number, total: number) {
   return 'success';
 }
 
-export function getOccupancyPalette(used: number, total: number) {
+export function getOccupancyPalette(used: number | string, total: number | string) {
   const state = getOccupancyState(used, total);
 
   if (state === 'danger') {

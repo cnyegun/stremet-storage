@@ -42,6 +42,7 @@ export interface ShelfSlot {
   shelf_number: number;
   row_number: number;
   column_number: number;
+  capacity: number;
   width_m: number;
   depth_m: number;
   height_m: number;
@@ -196,6 +197,7 @@ export interface RackCellItem {
   item_name: string;
   customer_name: string | null;
   material: string;
+  volume_m3?: number;
   quantity: number;
   checked_in_at: string;
   checked_in_by: string;

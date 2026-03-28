@@ -207,9 +207,9 @@ export default function ScanPage() {
       const rackDetail = await api.getRack(rackId);
       setRackCells(
         rackDetail.data.shelves
-          .filter(s => s.current_count < s.capacity)
-          .map(s => ({ id: s.id, row_number: s.row_number, column_number: s.column_number, capacity: s.capacity, current_count: s.current_count }))
-      );
+          .filter((s) => Number(s.current_count) < Number(s.capacity || 0))
+          .map((s) => ({ id: s.id, row_number: s.row_number, column_number: s.column_number, capacity: Number(s.capacity) || 0, current_count: Number(s.current_count) || 0 }))
+          );
     } catch {
       setRackCells([]);
     }

@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --ext .ts,.tsx",
-    "typecheck": "rm -f tsconfig.tsbuildinfo && next typegen && tsc --noEmit --incremental false"
+    "typecheck": "rm -f tsconfig.tsbuildinfo && next typegen && tsc --noEmit --incremental false",
+    "verify": "npm run lint && npm run typecheck && npm run build"
   },
   "dependencies": {
     "@emotion/cache": "^11.14.0",

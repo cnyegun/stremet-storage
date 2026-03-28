@@ -2,6 +2,15 @@ import type { RackWithShelves, RackWithStats } from '@shared/types';
 import { api } from '@/lib/api';
 import type { MapCell, MapRack, WarehouseMapData } from './types';
 
+function toNumber(value: number | string | null | undefined) {
+  if (value === null || value === undefined) {
+    return 0;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function mapCellItems(items: RackWithShelves['shelves'][number]['items']) {
   return items.map((item) => ({
     id: item.assignment_id,
@@ -22,8 +31,8 @@ function mapRackFromDetail(rack: RackWithShelves): MapRack {
     id: cell.id,
     row_number: cell.row_number,
     column_number: cell.column_number,
-    capacity: cell.capacity,
-    current_count: cell.current_count,
+    capacity: toNumber(cell.capacity),
+    current_count: toNumber(cell.current_count),
     items: mapCellItems(cell.items),
     checkin_href: `/check-in?rack=${encodeURIComponent(rack.id)}&cell=${encodeURIComponent(cell.id)}`,
   }));
@@ -51,8 +60,8 @@ function mapRackSummary(rack: RackWithStats): MapRack {
     rack_type: rack.rack_type,
     row_count: rack.row_count,
     column_count: rack.column_count,
-    occupancy_used: rack.items_stored,
-    occupancy_total: rack.total_capacity,
+    occupancy_used: toNumber(rack.items_stored),
+    occupancy_total: toNumber(rack.total_capacity),
     cells: [],
   };
 }
@@ -60,7 +69,7 @@ function mapRackSummary(rack: RackWithStats): MapRack {
 function buildStats(racks: MapRack[]): WarehouseMapData['stats'] {
   const totalSlots = racks.reduce((sum, rack) => sum + (rack.cells.length || rack.row_count * rack.column_count), 0);
   const occupiedSlots = racks.reduce((sum, rack) => sum + rack.cells.filter((cell) => cell.current_count > 0).length, 0);
-  const totalItemsStored = racks.reduce((sum, rack) => sum + rack.occupancy_used, 0);
+  const totalItemsStored = racks.reduce((sum, rack) => sum + (rack.cells.length > 0 ? rack.cells.reduce((rackSum, cell) => rackSum + cell.current_count, 0) : rack.occupancy_used), 0);
 
   return {
     total_items_stored: totalItemsStored,
