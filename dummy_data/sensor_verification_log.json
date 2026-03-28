@@ -1,0 +1,25 @@
+[
+  {
+    "cell_id": "R1-Row1-Col1",
+    "calculated_weight_kg": 100.00,
+    "sensor_measured_weight_kg": 100.05,
+    "status": "MATCH",
+    "last_sync": "2026-03-28T14:30:00Z"
+  },
+  {
+    "cell_id": "R6-Row2-Col5",
+    "calculated_weight_kg": 50.00,
+    "sensor_measured_weight_kg": 42.50,
+    "status": "MANUFACTURING_ERROR_OR_MISSING_PART",
+    "notes": "Underweight by 7.5kg. Flag for manual inspection.",
+    "last_sync": "2026-03-28T15:12:00Z"
+  },
+  {
+    "cell_id": "R10-Row4-Col10",
+    "calculated_weight_kg": 25.00,
+    "sensor_measured_weight_kg": 50.40,
+    "status": "DUPLICATE_ITEM_DETECTED",
+    "notes": "Double the expected weight. Unrecorded check-in likely.",
+    "last_sync": "2026-03-28T15:05:00Z"
+  }
+]

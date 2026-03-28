@@ -1,0 +1,39 @@
+[
+  {
+    "item_code": "RAW-SS-001",
+    "name": "Stainless Steel Sheet 2.0mm",
+    "type": "raw_material",
+    "weight_kg": 45.50,
+    "turnover_class": "B",
+    "dimensions": "2000x1000x2mm",
+    "production_priority": 3
+  },
+  {
+    "item_code": "WIP-BEND-442",
+    "name": "Housing Assembly Phase 1",
+    "type": "work_in_progress",
+    "weight_kg": 12.20,
+    "turnover_class": "A",
+    "dimensions": "400x300x150mm",
+    "production_priority": 1
+  },
+  {
+    "item_code": "ORD-KONE-998",
+    "name": "Elevator Control Panel Base",
+    "type": "customer_order",
+    "weight_kg": 8.75,
+    "turnover_class": "A",
+    "delivery_date": "2026-03-29T08:00:00Z",
+    "dimensions": "600x400x50mm",
+    "production_priority": 1
+  },
+  {
+    "item_code": "STK-BOLT-M12",
+    "name": "M12 Galvanized Bolts (Box 100)",
+    "type": "general_stock",
+    "weight_kg": 5.00,
+    "turnover_class": "C",
+    "dimensions": "200x200x100mm",
+    "production_priority": 5
+  }
+]
