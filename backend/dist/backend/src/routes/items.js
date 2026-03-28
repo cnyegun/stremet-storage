@@ -244,9 +244,6 @@ exports.itemsRouter.get('/:id/suggest-location', (0, asyncHandler_1.asyncHandler
     const itemHeight = dims[0] || 0;
     const itemMaxFootprint = dims[2] || 0;
     const itemMinFootprint = dims[1] || 0;
-    // const itemWeightTotal = (Number(item.weight_kg) || 0) * (Number(item.quantity) || 1);
-    // Map item type to preferred rack type
-    // const preferredRackType = item.type === 'general_stock' ? 'general_stock' : 'customer_orders';
     // 2. High-performance SQL Filter (Hard Constraints)
     const slotsResult = await pool_1.default.query(`
     SELECT
@@ -325,13 +322,13 @@ exports.itemsRouter.get('/:id/suggest-location', (0, asyncHandler_1.asyncHandler
         if (item.turnover_class === 'A' && [2, 3].includes(s.row_number)) {
             reasons.push("Ergonomic Golden Zone access");
         }
-        reasons.push(`${s.capacity - s.current_count} units available`);
+        reasons.push(`${(s.max_volume_m3 - s.current_volume_m3).toFixed(2)} m³ available`);
         return {
             shelf_slot_id: s.shelf_slot_id,
             rack_code: s.rack_code,
             row_number: s.row_number,
             column_number: s.column_number,
-            available_capacity: s.capacity - s.current_count,
+            available_capacity: Number((s.max_volume_m3 - s.current_volume_m3).toFixed(2)),
             reason: reasons.length > 0 ? reasons.join('. ') : "Standard optimized storage.",
             score: Math.round(100 - (s.score / 10))
         };
@@ -339,7 +336,7 @@ exports.itemsRouter.get('/:id/suggest-location', (0, asyncHandler_1.asyncHandler
     if (suggestions.length === 0) {
         res.json({
             data: [],
-            error: "No valid storage locations found that meet physical constraints."
+            error: "No valid storage locations found that meet volumetric constraints."
         });
     }
     else {
@@ -562,7 +559,7 @@ exports.itemsRouter.post('/check-in', (0, asyncHandler_1.asyncHandler)(async (re
             const locs = dupResult.rows.map((r) => (0, rackCells_1.buildRackCellLabel)(r.rack_code, r.row_number, r.column_number)).join(', ');
             warning = `This item already exists in storage at: ${locs}`;
         }
-        // Check shelf capacity
+        // Check shelf volumetric capacity
         const slotResult = await client.query('SELECT * FROM shelf_slots WHERE id = $1 FOR UPDATE', [shelf_slot_id]);
         if (slotResult.rows.length === 0) {
             res.status(404).json({ error: 'Shelf slot not found' });
@@ -570,20 +567,21 @@ exports.itemsRouter.post('/check-in', (0, asyncHandler_1.asyncHandler)(async (re
             return;
         }
         const slot = slotResult.rows[0];
-        if (slot.current_count >= slot.capacity) {
-            res.status(400).json({ error: 'Shelf slot is full' });
+        const qty = quantity || 1;
+        const incomingVolume = (Number(item.volume_m3) || 0.1) * qty;
+        if ((Number(slot.current_volume_m3) + incomingVolume) > Number(slot.max_volume_m3)) {
+            res.status(400).json({ error: 'Shelf slot volumetric capacity exceeded' });
             await client.query('ROLLBACK');
             return;
         }
         const unitCode = (0, trackingUnits_1.getNextTrackingUnitCode)(item.item_code, await getExistingTrackingUnitCodes(client));
         // Create assignment
         const assignmentId = (0, uuid_1.v4)();
-        const qty = quantity || 1;
         await client.query(`INSERT INTO storage_assignments (id, item_id, shelf_slot_id, unit_code, quantity, checked_in_by, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`, [assignmentId, item_id, shelf_slot_id, unitCode, qty, checked_in_by, notes || null]);
-        // Update shelf count and weight
-        const weightToAdd = (Number(itemResult.rows[0].weight_kg) || 0) * qty;
-        await client.query('UPDATE shelf_slots SET current_count = current_count + 1, current_weight_kg = current_weight_kg + $1, updated_at = NOW() WHERE id = $2', [weightToAdd, shelf_slot_id]);
+        // Update shelf volume and weight
+        const weightToAdd = (Number(item.weight_kg) || 0) * qty;
+        await client.query('UPDATE shelf_slots SET current_count = current_count + 1, current_weight_kg = current_weight_kg + $1, current_volume_m3 = current_volume_m3 + $2, updated_at = NOW() WHERE id = $3', [weightToAdd, incomingVolume, shelf_slot_id]);
         // Get location string for activity log
         const locResult = await client.query(`
       SELECT r.code AS rack_code, ss.row_number, ss.column_number
@@ -701,7 +699,7 @@ exports.itemsRouter.post('/move', (0, asyncHandler_1.asyncHandler)(async (req, r
         if (source_type === 'machine') {
             // Source is a machine assignment
             const maResult = await client.query(`
-        SELECT ma.*, m.code AS machine_code, m.name AS machine_name, i.item_code
+        SELECT ma.*, m.code AS machine_code, m.name AS machine_name, i.item_code, i.weight_kg, i.volume_m3
         FROM machine_assignments ma
         JOIN machines m ON ma.machine_id = m.id
         JOIN items i ON ma.item_id = i.id
@@ -721,7 +719,7 @@ exports.itemsRouter.post('/move', (0, asyncHandler_1.asyncHandler)(async (req, r
         else {
             // Source is a shelf assignment
             const saResult = await client.query(`
-        SELECT sa.*, ss.id AS old_slot_id, r.code AS old_rack_code, ss.row_number AS old_row_number, ss.column_number AS old_column_number, i.item_code
+        SELECT sa.*, ss.id AS old_slot_id, r.code AS old_rack_code, ss.row_number AS old_row_number, ss.column_number AS old_column_number, i.item_code, i.weight_kg, i.volume_m3
         FROM storage_assignments sa
         JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
         JOIN racks r ON ss.rack_id = r.id
@@ -778,13 +776,16 @@ exports.itemsRouter.post('/move', (0, asyncHandler_1.asyncHandler)(async (req, r
                 }
             }
             else {
+                const weightToMove = (Number(assignment.weight_kg) || 0) * moveQty;
+                const volumeToMove = (Number(assignment.volume_m3) || 0.1) * moveQty;
                 if (isPartial) {
                     await client.query('UPDATE storage_assignments SET quantity = quantity - $1 WHERE id = $2', [moveQty, assignment_id]);
                 }
                 else {
                     await client.query('UPDATE storage_assignments SET checked_out_at = NOW(), checked_out_by = $1 WHERE id = $2', [performed_by, assignment_id]);
-                    await client.query('UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), updated_at = NOW() WHERE id = $1', [assignment.old_slot_id]);
                 }
+                // Update source shelf
+                await client.query('UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), current_weight_kg = GREATEST(current_weight_kg - $1, 0), current_volume_m3 = GREATEST(current_volume_m3 - $2, 0), updated_at = NOW() WHERE id = $3', [weightToMove, volumeToMove, assignment.old_slot_id]);
             }
             // Create machine assignment at target
             newAssignmentId = (0, uuid_1.v4)();
@@ -800,8 +801,10 @@ exports.itemsRouter.post('/move', (0, asyncHandler_1.asyncHandler)(async (req, r
                 return;
             }
             const newSlot = newSlotResult.rows[0];
-            if (newSlot.current_count >= newSlot.capacity) {
-                res.status(400).json({ error: 'Target shelf slot is full' });
+            const weightToMove = (Number(assignment.weight_kg) || 0) * moveQty;
+            const volumeToMove = (Number(assignment.volume_m3) || 0.1) * moveQty;
+            if ((Number(newSlot.current_volume_m3) + volumeToMove) > Number(newSlot.max_volume_m3)) {
+                res.status(400).json({ error: 'Target shelf slot volumetric capacity exceeded' });
                 await client.query('ROLLBACK');
                 return;
             }
@@ -827,20 +830,18 @@ exports.itemsRouter.post('/move', (0, asyncHandler_1.asyncHandler)(async (req, r
                 }
                 else {
                     await client.query('UPDATE storage_assignments SET shelf_slot_id = $1 WHERE id = $2', [to_shelf_slot_id, assignment_id]);
-                    await client.query('UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), updated_at = NOW() WHERE id = $1', [assignment.old_slot_id]);
                 }
+                // Update source shelf
+                await client.query('UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), current_weight_kg = GREATEST(current_weight_kg - $1, 0), current_volume_m3 = GREATEST(current_volume_m3 - $2, 0), updated_at = NOW() WHERE id = $3', [weightToMove, volumeToMove, assignment.old_slot_id]);
             }
-            // Create/update shelf assignment at target (for machine→shelf or partial shelf→shelf)
+            // Create/update shelf assignment at target
             if (source_type === 'machine' || isPartial) {
                 newAssignmentId = (0, uuid_1.v4)();
                 await client.query(`INSERT INTO storage_assignments (id, item_id, shelf_slot_id, unit_code, parent_unit_code, quantity, checked_in_at, checked_in_by, notes)
            VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8)`, [newAssignmentId, itemId, to_shelf_slot_id, movedUnitCode, movedParentUnitCode, moveQty, performed_by, notes || null]);
-                await client.query('UPDATE shelf_slots SET current_count = current_count + 1, updated_at = NOW() WHERE id = $1', [to_shelf_slot_id]);
             }
-            else {
-                // Full shelf→shelf: already moved the assignment above, just update target count
-                await client.query('UPDATE shelf_slots SET current_count = current_count + 1, updated_at = NOW() WHERE id = $1', [to_shelf_slot_id]);
-            }
+            // Update target shelf
+            await client.query('UPDATE shelf_slots SET current_count = current_count + 1, current_weight_kg = current_weight_kg + $1, current_volume_m3 = current_volume_m3 + $2, updated_at = NOW() WHERE id = $3', [weightToMove, volumeToMove, to_shelf_slot_id]);
         }
         // Log activity
         const noteText = (0, trackingUnits_1.buildTrackingUnitMoveNote)(moveQty, totalQty, notes);

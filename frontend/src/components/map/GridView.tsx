@@ -71,9 +71,10 @@ export function GridView({ racks }: GridViewProps) {
             ) : (
               cell.items.map((item) => (
                 <Link key={item.id} href={item.item_href} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
-                  <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 0.5, '&:hover': { bgcolor: 'action.hover' } }}>
-                    <Typography variant="body2" fontWeight={700} color="primary" sx={{ fontSize: '0.75rem' }}>{item.item_code}</Typography>
-                    <Typography variant="caption" sx={{ fontSize: '0.65rem' }}>{item.volume_m3?.toFixed(2)} m³</Typography>
+                  <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 0.5, '&:hover': { bgcolor: 'action.hover' }, borderRadius: 0.5, px: 0.5, mx: -0.5 }}>
+                    <Typography variant="body2" fontWeight={500} color="primary" sx={{ fontSize: '0.75rem' }}>{item.item_code}</Typography>
+                    <Typography variant="caption" display="block">{item.name}</Typography>
+                    <Typography variant="caption" color="text.secondary">{item.customer_name ?? 'General stock'}</Typography>
                   </Box>
                 </Link>
               ))

@@ -288,11 +288,6 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
   const itemHeight = dims[0] || 0;
   const itemMaxFootprint = dims[2] || 0;
   const itemMinFootprint = dims[1] || 0;
-  const itemWeightTotal = (Number(item.weight_kg) || 0) * (Number(item.quantity) || 1);
-
-  // Map item type to preferred rack type
-  const preferredRackType = item.type === 'general_stock' ? 'general_stock' : 'customer_orders';
-
   // 2. High-performance SQL Filter (Hard Constraints)
   const slotsResult = await pool.query(`
     SELECT
@@ -631,6 +626,7 @@ itemsRouter.post('/check-in', asyncHandler(async (req, res) => {
     }
 
     const slot = slotResult.rows[0];
+    const qty = quantity || 1;
     const incomingVolume = (Number(item.volume_m3) || 0.1) * qty;
     if ((Number(slot.current_volume_m3) + incomingVolume) > Number(slot.max_volume_m3)) {
       res.status(400).json({ error: 'Shelf slot volumetric capacity exceeded' });

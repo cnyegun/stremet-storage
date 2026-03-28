@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import pool from './pool';
 import { buildTrackingUnitCode } from '../lib/trackingUnits';
-import { RackType } from '@shared/types';
+import type { RackType } from '@shared/types';
 
 // --- Helpers ---
 
@@ -11,12 +11,6 @@ function randomInt(min: number, max: number): number {
 
 function randomChoice<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function randomDate(daysAgo: number): Date {
-  const now = new Date();
-  const past = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
-  return new Date(past.getTime() + Math.random() * (now.getTime() - past.getTime()));
 }
 
 // --- FULL STATIC DATA (Restored from Original) ---

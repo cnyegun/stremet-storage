@@ -20,8 +20,8 @@ exports.statsRouter.get('/', (0, asyncHandler_1.asyncHandler)(async (_req, res) 
     SELECT
       r.*,
       COUNT(DISTINCT ss.id)::int AS cell_count,
-      COALESCE(SUM(ss.capacity), 0)::int AS total_capacity,
-      COALESCE(SUM(ss.current_count), 0)::int AS items_stored,
+      COALESCE(SUM(ss.max_volume_m3), 0)::float AS total_capacity,
+      COALESCE(SUM(ss.current_volume_m3), 0)::float AS items_stored,
       COUNT(DISTINCT ss.id) FILTER (WHERE ss.current_count > 0)::int AS cells_in_use
     FROM racks r
     LEFT JOIN shelf_slots ss ON ss.rack_id = r.id

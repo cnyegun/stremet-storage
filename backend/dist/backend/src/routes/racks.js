@@ -10,25 +10,19 @@ const asyncHandler_1 = require("../middleware/asyncHandler");
 exports.racksRouter = (0, express_1.Router)();
 // GET /api/racks — list all racks with occupancy stats
 exports.racksRouter.get('/', (0, asyncHandler_1.asyncHandler)(async (_req, res) => {
-    try {
-        const result = await pool_1.default.query(`
-      SELECT
-        r.*,
-        COUNT(DISTINCT ss.id)::int AS cell_count,
-        COALESCE(SUM(ss.max_volume_m3), 0)::int AS total_capacity,
-        COALESCE(SUM(ss.current_count), 0)::int AS items_stored,
-        COUNT(DISTINCT ss.id) FILTER (WHERE ss.current_count > 0)::int AS cells_in_use
-      FROM racks r
-      LEFT JOIN shelf_slots ss ON ss.rack_id = r.id
-      GROUP BY r.id
-      ORDER BY r.display_order, r.code
-    `);
-        res.json({ data: result.rows });
-    }
-    catch (err) {
-        console.error('[DATABASE ERROR in GET /racks]', err);
-        throw err;
-    }
+    const result = await pool_1.default.query(`
+    SELECT
+      r.*,
+      COUNT(DISTINCT ss.id)::int AS cell_count,
+      COALESCE(SUM(ss.max_volume_m3), 0)::float AS total_capacity,
+      COALESCE(SUM(ss.current_volume_m3), 0)::float AS items_stored,
+      COUNT(DISTINCT ss.id) FILTER (WHERE ss.current_count > 0)::int AS cells_in_use
+    FROM racks r
+    LEFT JOIN shelf_slots ss ON ss.rack_id = r.id
+    GROUP BY r.id
+    ORDER BY r.display_order, r.code
+  `);
+    res.json({ data: result.rows });
 }));
 // GET /api/racks/:id — rack detail with row/column cells and items
 exports.racksRouter.get('/:id', (0, asyncHandler_1.asyncHandler)(async (req, res) => {
