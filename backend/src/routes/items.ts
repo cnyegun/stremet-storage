@@ -300,8 +300,8 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
       ss.rack_id,
       ss.row_number,
       ss.column_number,
-      ss.capacity,
-      ss.current_count,
+      ss.max_volume_m3,
+      ss.current_volume_m3,
       ss.current_weight_kg,
       ss.max_weight_kg,
       ss.max_height,
@@ -313,21 +313,19 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
     FROM shelf_slots ss
     JOIN racks r ON ss.rack_id = r.id
     WHERE 
-      -- Physical Room (Count)
-      (ss.capacity - ss.current_count) >= $1
+      -- Volumetric Room (HARD CONSTRAINT)
+      (ss.max_volume_m3 - ss.current_volume_m3) >= ($1 * $2)
       -- Weight Limit (Dynamic Scale Check)
-      AND (ss.max_weight_kg - ss.current_weight_kg) >= $2
+      AND (ss.max_weight_kg - ss.current_weight_kg) >= ($3 * $1)
       -- Vertical Clearance (Gravity Fix)
-      AND ss.max_height >= $3
+      AND ss.max_height >= $4
       -- Footprint Clearance
-      AND GREATEST(ss.max_length, ss.max_width) >= $4
-      AND LEAST(ss.max_length, ss.max_width) >= $5
+      AND GREATEST(ss.max_length, ss.max_width) >= $5
+      AND LEAST(ss.max_length, ss.max_width) >= $6
       -- Stackability Logic
-      AND (($6 = FALSE AND ss.current_count = 0) OR ($6 = TRUE))
-      -- Zone Filtering based on Rack Type
-      AND (r.rack_type = $7 OR r.rack_type IN ('work_in_progress', 'finished_goods', 'raw_materials')) 
-    ORDER BY (r.rack_type = $7) DESC
-  `, [item.quantity, itemWeightTotal, itemHeight, itemMaxFootprint, itemMinFootprint, item.is_stackable ?? true, preferredRackType]);
+      AND (($7 = FALSE AND ss.current_count = 0) OR ($7 = TRUE))
+    ORDER BY r.display_order ASC
+  `, [item.quantity, item.volume_m3 || 0.1, item.weight_kg, itemHeight, itemMaxFootprint, itemMinFootprint, item.is_stackable ?? true]);
 
   // 3. Score and Sort using OptimizerService
   const suggestions = slotsResult.rows
@@ -338,8 +336,8 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
           rack_id: slot.rack_id,
           row_number: slot.row_number,
           column_number: slot.column_number,
-          capacity: slot.capacity,
-          current_count: slot.current_count,
+          max_volume_m3: Number(slot.max_volume_m3),
+          current_volume_m3: Number(slot.current_volume_m3),
           current_weight_kg: Number(slot.current_weight_kg),
           max_weight_kg: Number(slot.max_weight_kg),
           max_height: slot.max_height,
@@ -352,6 +350,7 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
         {
           type: item.type as 'customer_order' | 'general_stock' | 'raw_material' | 'work_in_progress',
           weight_kg: Number(item.weight_kg),
+          volume_m3: Number(item.volume_m3 || 0.1),
           turnover_class: (item.turnover_class || 'C') as 'A' | 'B' | 'C',
           quantity: Number(item.quantity),
           is_stackable: item.is_stackable ?? true,

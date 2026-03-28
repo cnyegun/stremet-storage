@@ -42,7 +42,11 @@ export interface ShelfSlot {
   shelf_number: number;
   row_number: number;
   column_number: number;
-  capacity: number;
+  width_m: number;
+  depth_m: number;
+  height_m: number;
+  max_volume_m3: number;
+  current_volume_m3: number;
   current_count: number;
   created_at: string;
   updated_at: string;
@@ -65,6 +69,7 @@ export interface Item {
   material: string;
   dimensions: string;
   weight_kg: number;
+  volume_m3: number;
   type: ItemType;
   order_number: string | null;
   quantity: number;

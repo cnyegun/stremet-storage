@@ -53,29 +53,29 @@ export function GridView({ racks }: GridViewProps) {
   }
 
   function renderCell(cell: MapCell) {
-    const palette = getOccupancyPalette(cell.current_count, cell.capacity);
     const expanded = expandedCellId === cell.id;
 
     return (
-      <TableCell key={cell.id} sx={{ verticalAlign: 'top', bgcolor: 'background.paper' }}>
+      <TableCell key={cell.id} sx={{ verticalAlign: 'top', bgcolor: 'background.paper', p: 1 }}>
         <Box
           onClick={() => setExpandedCellId((current) => (current === cell.id ? null : cell.id))}
-          sx={{ cursor: 'pointer', border: 1, p: 1, borderColor: palette.border, bgcolor: palette.fill, borderRadius: 1 }}
+          sx={{ cursor: 'pointer' }}
         >
-          <Typography variant="body2" fontWeight={500}>{cell.current_count === 0 ? 'Empty' : `${cell.current_count} items`}</Typography>
-          <Typography variant="caption" color="text.secondary">{cell.current_count}/{cell.capacity}</Typography>
+          <OccupancyBar used={cell.current_volume_m3} total={cell.max_volume_m3} compact />
+          <Typography variant="caption" sx={{ mt: 0.5, display: 'block', fontSize: '0.65rem', color: 'text.secondary' }}>
+            {cell.current_count} items
+          </Typography>
         </Box>
         <Collapse in={expanded}>
           <Stack spacing={0.5} mt={1}>
             {cell.items.length === 0 ? (
-              <Typography variant="caption" color="text.secondary">No active items.</Typography>
+              <Typography variant="caption" color="text.secondary">Empty cell.</Typography>
             ) : (
               cell.items.map((item) => (
                 <Link key={item.id} href={item.item_href} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
-                  <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 0.5, '&:hover': { bgcolor: 'action.hover' }, borderRadius: 0.5, px: 0.5, mx: -0.5 }}>
-                    <Typography variant="body2" fontWeight={500} color="primary">{item.item_code}</Typography>
-                    <Typography variant="caption" display="block">{item.name}</Typography>
-                    <Typography variant="caption" color="text.secondary">{item.customer_name ?? 'General stock'}</Typography>
+                  <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 0.5, '&:hover': { bgcolor: 'action.hover' } }}>
+                    <Typography variant="body2" fontWeight={700} color="primary" sx={{ fontSize: '0.75rem' }}>{item.item_code}</Typography>
+                    <Typography variant="caption" sx={{ fontSize: '0.65rem' }}>{item.quantity} pcs · {item.volume_m3?.toFixed(2)} m³</Typography>
                   </Box>
                 </Link>
               ))
@@ -101,31 +101,31 @@ export function GridView({ racks }: GridViewProps) {
             <Box onClick={() => toggleRack(rack.id)} sx={{ p: 2, cursor: 'pointer', bgcolor: 'grey.50', display: 'flex', alignItems: 'center', gap: 2 }}>
               <IconButton size="small">{expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}</IconButton>
               <Box flex={1}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
                   <Box>
-                    <Typography variant="subtitle1">{rack.code}</Typography>
-                    <Typography variant="caption" color="text.secondary">{rack.label} • {toTitleCase(rack.rack_type)}</Typography>
+                    <Typography variant="subtitle1" fontWeight={700}>{rack.label}</Typography>
+                    <Typography variant="caption" color="text.secondary">Standard Volumetric Rack · {rack.row_count}x{rack.column_count} Grid</Typography>
                   </Box>
-                  <Link href={`/racks/${rack.id}`} style={{ fontSize: 13, color: '#1565C0' }}>Open rack</Link>
+                  <Link href={`/racks/${rack.id}`} style={{ fontSize: 13, color: '#1565C0', fontWeight: 600 }}>Inspect Rack</Link>
                 </Stack>
-                <OccupancyBar used={rack.occupancy_used} total={rack.occupancy_total} compact />
+                <OccupancyBar used={rack.occupancy_used} total={rack.occupancy_total} label="Total Rack Volume" />
               </Box>
             </Box>
             <Collapse in={expanded}>
               <TableContainer>
-                <MuiTable size="small">
+                <MuiTable size="small" sx={{ tableLayout: 'fixed' }}>
                   <TableHead>
-                    <TableRow>
-                      <TableCell>Row</TableCell>
-                      {Array.from({ length: rack.column_count }, (_, index) => (
-                        <TableCell key={index}>Column {index + 1}</TableCell>
+                    <TableRow sx={{ bgcolor: 'grey.100' }}>
+                      <TableCell sx={{ width: 80, fontWeight: 700 }}>Row</TableCell>
+                      {Array.from({ length: 10 }, (_, i) => (
+                        <TableCell key={i} align="center" sx={{ fontWeight: 700 }}>Col {i + 1}</TableCell>
                       ))}
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {rows.map((row) => (
                       <TableRow key={row.rowNumber}>
-                        <TableCell sx={{ fontWeight: 500 }}>Row {row.rowNumber}</TableCell>
+                        <TableCell sx={{ fontWeight: 600, bgcolor: 'grey.50' }}>Lvl {row.rowNumber}</TableCell>
                         {row.cells.map(renderCell)}
                       </TableRow>
                     ))}

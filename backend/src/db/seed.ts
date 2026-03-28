@@ -62,9 +62,8 @@ async function seed(): Promise<void> {
       const id = uuidv4();
       const code = `Rack-${r}`;
       const label = `Physical Rack ${r}`;
-      const type = rackTypes[r] || 'general_stock';
+      const type = 'general_stock';
       
-      // X-Coordinate from 50 (Production/Left) to 950 (Delivery/Right)
       const px = 50 + ((r-1) * 90);
       const py = (r % 2 === 0) ? 100 : 300; 
 
@@ -73,53 +72,42 @@ async function seed(): Promise<void> {
       await client.query(
         `INSERT INTO racks (id, code, label, description, rack_type, row_count, column_count, display_order, color, position_x, position_y, width, height)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-        [id, code, label, `Storage for ${type.replace('_', ' ')}`, type, 4, 10, r, '#2563EB', px, py, 80, 150]
+        [id, code, label, `Standard Volumetric Rack`, type, 4, 10, r, '#2563EB', px, py, 80, 150]
       );
     }
-    console.log('  physical racks: 10');
+    console.log('  standard physical racks: 10');
 
-    // --- Rack Cells (4 rows x 10 columns per rack) ---
-    interface SlotRecord { id: string; rackId: string; rackNum: number; rowNum: number; colNum: number; capacity: number }
+    // --- Rack Cells (Volumetric Standard) ---
+    interface SlotRecord { id: string; rackId: string; rackNum: number; rowNum: number; colNum: number }
     const slots: SlotRecord[] = [];
     for (const rack of racks) {
       for (let r = 1; r <= 4; r++) {
         for (let c = 1; c <= 10; c++) {
           const id = uuidv4();
-          const capacity = randomInt(15, 30);
           const shelfNumber = (r - 1) * 10 + c;
-          slots.push({ id, rackId: rack.id, rackNum: rack.rackNum, rowNum: r, colNum: c, capacity });
+          slots.push({ id, rackId: rack.id, rackNum: rack.rackNum, rowNum: r, colNum: c });
           await client.query(
-            `INSERT INTO shelf_slots (id, rack_id, shelf_number, row_number, column_number, capacity, current_count, max_height, max_weight_kg, measured_weight_kg)
-             VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, 0.00)`,
-            [id, rack.id, shelfNumber, r, c, capacity, randomChoice([400, 600, 800, 1000]), 2000]
+            `INSERT INTO shelf_slots (id, rack_id, shelf_number, row_number, column_number, width_m, depth_m, height_m, max_volume_m3, current_volume_m3, current_count, max_weight_kg, measured_weight_kg)
+             VALUES ($1, $2, $3, $4, $5, 2.9, 1.1, 6.0, 19.14, 0.00, 0, 2000, 0.00)`,
+            [id, rack.id, shelfNumber, r, c]
           );
         }
       }
     }
-    console.log('  rack cells: 400');
+    console.log('  volumetric rack cells: 400');
 
-    // --- Customers ---
-    const customerIds: Record<string, string> = {};
-    for (const c of CUSTOMERS) {
-      const id = uuidv4();
-      customerIds[c.code] = id;
-      await client.query(`INSERT INTO customers (id, name, code, contact_email) VALUES ($1, $2, $3, $4)`, [id, c.name, c.code, c.email]);
-    }
-
-    // --- Items (~200 total with logistical types) ---
-    interface ItemRecord { id: string; code: string; type: string; weight_kg: number }
-    const items: ItemRecord[] = [];
-
+    // ... Items Section ...
     // 1. Raw Materials
     for (let i = 0; i < 20; i++) {
         const id = uuidv4();
         const itemCode = `RAW-${String(i+1).padStart(3, '0')}`;
         const weight = randomInt(50, 150);
-        items.push({ id, code: itemCode, type: 'raw_material', weight_kg: weight });
+        const volume = (randomInt(5, 50) / 10); // 0.5 to 5.0 m3
+        items.push({ id, code: itemCode, type: 'raw_material', weight_kg: weight, volume_m3: volume });
         await client.query(
-            `INSERT INTO items (id, item_code, name, material, weight_kg, type, quantity)
-             VALUES ($1, $2, $3, $4, $5, 'raw_material', $6)`,
-            [id, itemCode, `Steel Sheet ${i+1}`, 'Stainless', weight, randomInt(5, 10)]
+            `INSERT INTO items (id, item_code, name, material, weight_kg, volume_m3, type, quantity)
+             VALUES ($1, $2, $3, $4, $5, $6, 'raw_material', $7)`,
+            [id, itemCode, `Steel Sheet ${i+1}`, 'Stainless', weight, volume, randomInt(1, 2)]
         );
     }
 
@@ -128,15 +116,16 @@ async function seed(): Promise<void> {
         const id = uuidv4();
         const itemCode = `WIP-${String(i+1).padStart(3, '0')}`;
         const weight = randomInt(10, 40);
-        items.push({ id, code: itemCode, type: 'work_in_progress', weight_kg: weight });
+        const volume = (randomInt(1, 20) / 10); // 0.1 to 2.0 m3
+        items.push({ id, code: itemCode, type: 'work_in_progress', weight_kg: weight, volume_m3: volume });
         await client.query(
-            `INSERT INTO items (id, item_code, name, type, weight_kg, quantity)
-             VALUES ($1, $2, $3, 'work_in_progress', $4, $5)`,
-            [id, itemCode, `Interim Part ${i+1}`, weight, randomInt(10, 20)]
+            `INSERT INTO items (id, item_code, name, type, weight_kg, volume_m3, quantity)
+             VALUES ($1, $2, $3, 'work_in_progress', $4, $5, $6)`,
+            [id, itemCode, `Interim Part ${i+1}`, weight, volume, randomInt(1, 5)]
         );
     }
 
-    // 3. Customer order items (Finished Goods)
+    // 3. Customer order items
     for (const cust of CUSTOMERS) {
       for (let i = 0; i < 15; i++) {
         const id = uuidv4();
@@ -144,14 +133,15 @@ async function seed(): Promise<void> {
         const variant = randomChoice(PART_VARIANTS);
         const itemCode = `${cust.code}-${String(i+1).padStart(3, '0')}-${partType.toUpperCase()}-${variant}`;
         const weight = randomInt(5, 25);
+        const volume = (randomInt(1, 10) / 10); // 0.1 to 1.0 m3
         const deliveryDate = new Date();
         deliveryDate.setDate(deliveryDate.getDate() + randomInt(1, 14));
 
-        items.push({ id, code: itemCode, type: 'customer_order', weight_kg: weight });
+        items.push({ id, code: itemCode, type: 'customer_order', weight_kg: weight, volume_m3: volume });
         await client.query(
-          `INSERT INTO items (id, item_code, customer_id, name, weight_kg, type, quantity, delivery_date)
-           VALUES ($1, $2, $3, $4, $5, 'customer_order', $6, $7)`,
-          [id, itemCode, customerIds[cust.code], `${partType} ${variant}`, weight, randomInt(1, 10), deliveryDate]
+          `INSERT INTO items (id, item_code, customer_id, name, weight_kg, volume_m3, type, quantity, delivery_date)
+           VALUES ($1, $2, $3, $4, $5, $6, 'customer_order', $7, $8)`,
+          [id, itemCode, customerIds[cust.code], `${partType} ${variant}`, weight, volume, randomInt(1, 10), deliveryDate]
         );
       }
     }
