@@ -5,7 +5,7 @@ import { handleAssistantMessage } from '../services/assistant';
 export const assistantRouter = Router();
 
 assistantRouter.post('/', asyncHandler(async (req, res) => {
-  const { message, history } = req.body;
+  const { message, history, workerName: _workerName } = req.body;
 
   if (!message || typeof message !== 'string' || message.length > 2000) {
     res.status(400).json({ error: 'Message is required and must be under 2000 characters' });

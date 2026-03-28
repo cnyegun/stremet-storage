@@ -1,4 +1,5 @@
 import pool from '../db/pool';
+import type { ActionProposal } from '@shared/types';
 
 const LLM_API_URL = 'https://opencode.ai/zen/v1/chat/completions';
 const LLM_API_KEY = 'sk-5U31szKCRP2TIQll1clR4ETEMduIZpuHQFx1jCvHjEqM463DIfIkkyWCKmgZbn3n';
@@ -52,7 +53,38 @@ KEY QUERY PATTERNS:
 - Available space: shelf_slots WHERE capacity - current_count >= N
 - Customer items: JOIN items ON customer_id -> customers WHERE code/name ILIKE ...
 - Use ILIKE for text search (handles Finnish characters like ä, ö)
-- Today's date: CURRENT_DATE`;
+- Today's date: CURRENT_DATE
+
+ACTIONS YOU CAN PERFORM:
+Besides answering questions with SQL, you can help workers check in items, check out items, and move items between locations.
+When the worker asks you to perform an action, FIRST use SQL queries to resolve the needed UUIDs (item_id, assignment_id, shelf_slot_id, machine_id), THEN propose the action.
+
+To propose an action, output a JSON block inside \`\`\`action fences (similar to how you output SQL in \`\`\`sql fences):
+
+CHECK-IN (place an item onto a shelf):
+\`\`\`action
+{"action":"check_in","item_id":"<uuid>","item_code":"<item code>","shelf_slot_id":"<uuid>","location":"<rack/cell label e.g. A-R1/R2C3>","quantity":<number>}
+\`\`\`
+
+CHECK-OUT (remove an item from storage or a machine):
+\`\`\`action
+{"action":"check_out","assignment_id":"<uuid>","unit_code":"<tracking unit code>","source_type":"shelf","location":"<current location label>","item_code":"<item code>"}
+\`\`\`
+For machine check-out use "source_type":"machine".
+
+MOVE (move an item from one location to another):
+\`\`\`action
+{"action":"move","assignment_id":"<uuid>","unit_code":"<tracking unit code>","source_type":"shelf","from":"<from label>","to":"<to label>","to_shelf_slot_id":"<uuid if moving to a shelf>","to_machine_id":"<uuid if moving to a machine>","quantity":<number or null for all>}
+\`\`\`
+
+RULES FOR ACTIONS:
+- ALWAYS resolve names to UUIDs with SQL first. Never guess or make up UUIDs.
+- Include human-readable labels (item_code, location names) so the worker can verify before confirming.
+- Only propose ONE action at a time.
+- Write a short summary BEFORE the \`\`\`action block explaining what you will do.
+- The worker's name is filled in automatically — never ask for it.
+- If you cannot find the item, shelf, or machine, tell the worker what you searched for and that nothing matched.
+- Do NOT combine an action block with a SQL block in the same response — either query or propose, not both.`;
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -64,6 +96,7 @@ interface AssistantResult {
   sql?: string;
   data?: Record<string, unknown>[];
   rowCount?: number;
+  action?: ActionProposal;
 }
 
 function validateSQL(sql: string): boolean {
@@ -91,17 +124,20 @@ function validateSQL(sql: string): boolean {
 }
 
 function extractSQL(text: string): string | null {
+  // Skip if text has an action block — actions take priority
+  if (/```action/i.test(text)) return null;
+
   // Look for ```sql ... ``` blocks
   const match = text.match(/```sql\s*([\s\S]*?)```/);
-  if (match) return match[1].trim();
+  if (match) return splitFirstStatement(match[1].trim());
 
   // Also try plain ``` blocks
   const plainMatch = text.match(/```\s*(SELECT[\s\S]*?)```/i);
-  if (plainMatch) return plainMatch[1].trim();
+  if (plainMatch) return splitFirstStatement(plainMatch[1].trim());
 
   // Handle XML-style tool calls the model sometimes emits
   const xmlMatch = text.match(/<parameter name="sql">\s*([\s\S]*?)\s*<\/parameter>/);
-  if (xmlMatch) return xmlMatch[1].trim();
+  if (xmlMatch) return splitFirstStatement(xmlMatch[1].trim());
 
   // Last resort: find a bare SELECT ... statement (multi-line)
   const bareMatch = text.match(/((?:WITH|SELECT)\s[\s\S]*?(?:;|\n\n|$))/i);
@@ -111,6 +147,42 @@ function extractSQL(text: string): string | null {
   }
 
   return null;
+}
+
+// If the LLM puts multiple SQL statements in one block, take only the first
+function splitFirstStatement(sql: string): string {
+  // Remove comment lines
+  const lines = sql.split('\n').filter(line => !line.trim().startsWith('--'));
+  const cleaned = lines.join('\n').trim();
+  // Split on semicolons (outside of string literals) and take the first non-empty statement
+  const statements = cleaned.split(/;\s*\n/).filter(s => s.trim());
+  return (statements[0] || cleaned).trim().replace(/;$/, '');
+}
+
+function extractAction(text: string): ActionProposal | null {
+  const match = text.match(/```action\s*([\s\S]*?)```/);
+  if (!match) return null;
+  try {
+    const obj = JSON.parse(match[1].trim());
+    if (obj.action === 'check_in' && obj.item_id && obj.shelf_slot_id && obj.item_code && obj.location) {
+      return obj as ActionProposal;
+    }
+    if (obj.action === 'check_out' && obj.assignment_id && obj.unit_code && obj.item_code) {
+      return obj as ActionProposal;
+    }
+    if (obj.action === 'move' && obj.assignment_id && obj.unit_code && (obj.to_shelf_slot_id || obj.to_machine_id)) {
+      return obj as ActionProposal;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function extractTextBeforeAction(text: string): string {
+  const idx = text.indexOf('```action');
+  if (idx <= 0) return '';
+  return text.slice(0, idx).trim();
 }
 
 async function callLLM(messages: ChatMessage[]): Promise<string> {
@@ -179,8 +251,21 @@ export async function handleAssistantMessage(
   let lastRowCount: number | undefined;
 
   // Loop: let the LLM run up to 3 SQL queries to answer the question
-  for (let round = 0; round < 3; round++) {
+  for (let round = 0; round < 5; round++) {
     const llmResponse = await callLLM(messages);
+    // Check for action proposal first
+    const action = extractAction(llmResponse);
+    if (action) {
+      const summaryText = extractTextBeforeAction(llmResponse);
+      return {
+        message: summaryText || 'I\'d like to perform this action:',
+        sql: lastSql,
+        data: lastData,
+        rowCount: lastRowCount,
+        action,
+      };
+    }
+
     const sql = extractSQL(llmResponse);
 
     if (!sql) {
@@ -212,7 +297,7 @@ export async function handleAssistantMessage(
       } else {
         messages.push({
           role: 'user',
-          content: `Query returned ${result.rowCount} rows. Results:\n${JSON.stringify(lastData, null, 2)}\n\nIf you have enough information, give a clear final answer. If you need another query, go ahead. Do NOT repeat a query you already ran.`,
+          content: `Query returned ${result.rowCount} rows. Results:\n${JSON.stringify(lastData, null, 2)}\n\nIf you have enough information, give a clear final answer (or propose an action using an \`\`\`action block if the user asked you to do something). If you need another query, go ahead. Do NOT repeat a query you already ran.`,
         });
       }
     } catch (err) {
@@ -224,9 +309,22 @@ export async function handleAssistantMessage(
     }
   }
 
-  // If we exhausted rounds, do one final call asking for a summary
-  messages.push({ role: 'user', content: 'Please summarize what you found so far. No more SQL queries.' });
+  // If we exhausted rounds, do one final call asking for a summary (or action proposal)
+  messages.push({ role: 'user', content: 'Please summarize what you found so far. No more SQL queries. If the user asked you to perform an action and you have all the UUIDs, propose the action now using an ```action block.' });
   const finalResponse = await callLLM(messages);
+
+  const finalAction = extractAction(finalResponse);
+  if (finalAction) {
+    const summaryText = extractTextBeforeAction(finalResponse);
+    return {
+      message: summaryText || 'I\'d like to perform this action:',
+      sql: lastSql,
+      data: lastData,
+      rowCount: lastRowCount,
+      action: finalAction,
+    };
+  }
+
   return {
     message: finalResponse,
     sql: lastSql,

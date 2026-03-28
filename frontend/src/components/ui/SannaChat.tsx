@@ -2,18 +2,15 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Box from '@mui/material/Box';
+import MuiButton from '@mui/material/Button';
 import Fab from '@mui/material/Fab';
-import Paper from '@mui/material/Paper';
-import Typography from '@mui/material/Typography';
-import TextField from '@mui/material/TextField';
 import IconButton from '@mui/material/IconButton';
-import Table from '@mui/material/Table';
-import TableBody from '@mui/material/TableBody';
-import TableCell from '@mui/material/TableCell';
-import TableHead from '@mui/material/TableHead';
-import TableRow from '@mui/material/TableRow';
-import Collapse from '@mui/material/Collapse';
+import Paper from '@mui/material/Paper';
+import TextField from '@mui/material/TextField';
+import Typography from '@mui/material/Typography';
+import { useWorkerSession } from '@/components/ui/WorkerSession';
 import { api } from '@/lib/api';
+import type { ActionProposal } from '@shared/types';
 
 // Inline SVG icons to avoid @mui/icons-material dependency issues
 function ChatIcon() {
@@ -40,13 +37,22 @@ function CloseIcon() {
   );
 }
 
+type ActionStatus = 'pending' | 'executing' | 'done' | 'error' | 'cancelled';
+
 interface Message {
+  id: number;
   role: 'user' | 'assistant';
   content: string;
   sql?: string;
   data?: Record<string, unknown>[];
   rowCount?: number;
+  action?: ActionProposal;
+  actionStatus?: ActionStatus;
+  actionError?: string;
 }
+
+let messageIdCounter = 0;
+function nextId() { return ++messageIdCounter; }
 
 function renderMarkdown(text: string): string {
   // Sanitize HTML tags
@@ -93,6 +99,47 @@ function renderMarkdown(text: string): string {
   return html;
 }
 
+const ACTION_COLORS = {
+  check_in: { bg: '#e8f5e9', border: '#4caf50', label: 'Check in', icon: '+' },
+  check_out: { bg: '#fff3e0', border: '#ff9800', label: 'Check out', icon: '-' },
+  move: { bg: '#e3f2fd', border: '#1565C0', label: 'Move', icon: '\u2192' },
+} as const;
+
+function getActionDetails(action: ActionProposal): { label: string; rows: [string, string][] } {
+  switch (action.action) {
+    case 'check_in':
+      return {
+        label: 'Check in',
+        rows: [
+          ['Item', action.item_code],
+          ['To', action.location],
+          ['Quantity', String(action.quantity)],
+          ...(action.notes ? [['Notes', action.notes] as [string, string]] : []),
+        ],
+      };
+    case 'check_out': {
+      const coRows: [string, string][] = [
+        ['Item', action.item_code],
+        ['Unit', action.unit_code],
+        ['From', action.location],
+        ['Source', action.source_type],
+      ];
+      if (action.notes) coRows.push(['Notes', action.notes]);
+      return { label: 'Check out', rows: coRows };
+    }
+    case 'move': {
+      const mvRows: [string, string][] = [
+        ['Unit', action.unit_code],
+        ['From', action.from],
+        ['To', action.to],
+        ['Quantity', action.quantity ? String(action.quantity) : 'All'],
+      ];
+      if (action.notes) mvRows.push(['Notes', action.notes]);
+      return { label: 'Move', rows: mvRows };
+    }
+  }
+}
+
 export function SannaChat() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -100,6 +147,7 @@ export function SannaChat() {
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { workerName } = useWorkerSession();
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -113,28 +161,86 @@ export function SannaChat() {
     if (open) inputRef.current?.focus();
   }, [open]);
 
+  const updateMessage = useCallback((id: number, updates: Partial<Message>) => {
+    setMessages(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
+  }, []);
+
+  const handleConfirm = useCallback(async (msg: Message) => {
+    if (!msg.action || !workerName) return;
+    updateMessage(msg.id, { actionStatus: 'executing' });
+
+    try {
+      const action = msg.action;
+      let successText = '';
+
+      if (action.action === 'check_in') {
+        const res = await api.checkInItem({
+          item_id: action.item_id,
+          shelf_slot_id: action.shelf_slot_id,
+          quantity: action.quantity,
+          checked_in_by: workerName,
+          notes: action.notes,
+        });
+        successText = `Checked in ${res.data.unit_code} to ${res.data.location}`;
+      } else if (action.action === 'check_out') {
+        const res = await api.checkOutItem({
+          assignment_id: action.assignment_id,
+          source_type: action.source_type,
+          checked_out_by: workerName,
+          notes: action.notes,
+        });
+        successText = `Checked out ${res.data.unit_code} from ${res.data.location}`;
+      } else if (action.action === 'move') {
+        const res = await api.moveItem({
+          assignment_id: action.assignment_id,
+          source_type: action.source_type,
+          to_shelf_slot_id: action.to_shelf_slot_id,
+          to_machine_id: action.to_machine_id,
+          performed_by: workerName,
+          quantity: action.quantity,
+          notes: action.notes,
+        });
+        successText = `Moved ${res.data.unit_code} from ${res.data.from} to ${res.data.to} (${res.data.quantity_moved} pcs)`;
+      }
+
+      updateMessage(msg.id, { actionStatus: 'done' });
+      setMessages(prev => [...prev, { id: nextId(), role: 'assistant', content: successText }]);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Action failed';
+      updateMessage(msg.id, { actionStatus: 'error', actionError: errorMsg });
+    }
+  }, [workerName, updateMessage]);
+
+  const handleCancel = useCallback((msg: Message) => {
+    updateMessage(msg.id, { actionStatus: 'cancelled' });
+  }, [updateMessage]);
+
   const handleSend = async () => {
     const trimmed = input.trim();
     if (!trimmed || loading) return;
 
-    const userMsg: Message = { role: 'user', content: trimmed };
+    const userMsg: Message = { id: nextId(), role: 'user', content: trimmed };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setLoading(true);
 
     try {
       const history = messages.map(m => ({ role: m.role, content: m.content }));
-      const res = await api.sendAssistantMessage({ message: trimmed, history });
+      const res = await api.sendAssistantMessage({ message: trimmed, history, workerName: workerName || undefined });
       const d = res.data;
       setMessages(prev => [...prev, {
+        id: nextId(),
         role: 'assistant',
         content: d.message,
         sql: d.sql,
         data: d.data,
         rowCount: d.rowCount,
+        action: d.action,
+        actionStatus: d.action ? 'pending' : undefined,
       }]);
     } catch (err) {
       setMessages(prev => [...prev, {
+        id: nextId(),
         role: 'assistant',
         content: `Sorry, something went wrong. ${err instanceof Error ? err.message : 'Please try again.'}`,
       }]);
@@ -234,16 +340,21 @@ export function SannaChat() {
                   &quot;Where is KONE-001-PANEL-A?&quot;
                 </Typography>
                 <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
-                  &quot;How full is Zone A?&quot;
+                  &quot;Move the Kone panels to laser cutter 1&quot;
                 </Typography>
                 <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
-                  &quot;Show items checked in today&quot;
+                  &quot;Check out VALM-003 from Zone D&quot;
                 </Typography>
               </Box>
             )}
 
-            {messages.map((msg, i) => (
-              <MessageBubble key={i} message={msg} />
+            {messages.map((msg) => (
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                onConfirm={handleConfirm}
+                onCancel={handleCancel}
+              />
             ))}
 
             {loading && (
@@ -319,8 +430,113 @@ function ThinkingDots() {
   return <span style={{ display: 'inline-block', width: 16 }}>{dots}</span>;
 }
 
-function MessageBubble({ message }: { message: Message }) {
-  const [showSQL, setShowSQL] = useState(false);
+function ActionCard({ action, status, error, onConfirm, onCancel }: {
+  action: ActionProposal;
+  status: ActionStatus;
+  error?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const colors = ACTION_COLORS[action.action];
+  const details = getActionDetails(action);
+  const isDone = status === 'done';
+  const isCancelled = status === 'cancelled';
+  const isError = status === 'error';
+  const isExecuting = status === 'executing';
+  const isPending = status === 'pending';
+
+  return (
+    <Box sx={{
+      mt: 0.5,
+      border: `1.5px solid ${isCancelled ? '#bdbdbd' : colors.border}`,
+      borderRadius: '6px',
+      overflow: 'hidden',
+      opacity: isCancelled ? 0.5 : 1,
+    }}>
+      {/* Header */}
+      <Box sx={{
+        bgcolor: isCancelled ? '#e0e0e0' : colors.bg,
+        px: 1.5,
+        py: 0.6,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 0.8,
+        borderBottom: `1px solid ${isCancelled ? '#bdbdbd' : colors.border}`,
+      }}>
+        <Box sx={{
+          width: 20,
+          height: 20,
+          borderRadius: '4px',
+          bgcolor: isCancelled ? '#9e9e9e' : colors.border,
+          color: '#fff',
+          display: 'grid',
+          placeItems: 'center',
+          fontSize: 12,
+          fontWeight: 700,
+        }}>
+          {colors.icon}
+        </Box>
+        <Typography sx={{ fontSize: 12, fontWeight: 600 }}>{details.label}</Typography>
+        {isDone && <Typography sx={{ fontSize: 10, color: '#4caf50', fontWeight: 600, ml: 'auto' }}>Done</Typography>}
+        {isCancelled && <Typography sx={{ fontSize: 10, color: '#9e9e9e', ml: 'auto' }}>Cancelled</Typography>}
+        {isError && <Typography sx={{ fontSize: 10, color: '#d32f2f', fontWeight: 600, ml: 'auto' }}>Failed</Typography>}
+      </Box>
+
+      {/* Details */}
+      <Box sx={{ px: 1.5, py: 0.8, bgcolor: '#fff' }}>
+        {details.rows.map(([label, value]) => (
+          <Box key={label} sx={{ display: 'flex', gap: 1, py: 0.15 }}>
+            <Typography sx={{ fontSize: 11, color: 'text.secondary', minWidth: 56 }}>{label}</Typography>
+            <Typography sx={{ fontSize: 11, fontFamily: 'Roboto Mono, monospace', fontWeight: 500 }}>{value}</Typography>
+          </Box>
+        ))}
+      </Box>
+
+      {/* Error message */}
+      {isError && error && (
+        <Box sx={{ px: 1.5, py: 0.5, bgcolor: '#ffebee' }}>
+          <Typography sx={{ fontSize: 11, color: '#d32f2f' }}>{error}</Typography>
+        </Box>
+      )}
+
+      {/* Buttons */}
+      {(isPending || isExecuting) && (
+        <Box sx={{
+          px: 1.5,
+          py: 0.8,
+          display: 'flex',
+          justifyContent: 'flex-end',
+          gap: 1,
+          borderTop: '1px solid #e0e0e0',
+          bgcolor: '#fafafa',
+        }}>
+          <MuiButton
+            variant="outlined"
+            onClick={onCancel}
+            disabled={isExecuting}
+            sx={{ fontSize: 11, py: 0.25, px: 1.2, minWidth: 0, textTransform: 'none' }}
+          >
+            Cancel
+          </MuiButton>
+          <MuiButton
+            variant="contained"
+            onClick={onConfirm}
+            disabled={isExecuting}
+            sx={{ fontSize: 11, py: 0.25, px: 1.2, minWidth: 0, textTransform: 'none' }}
+          >
+            {isExecuting ? 'Executing...' : 'Confirm'}
+          </MuiButton>
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+function MessageBubble({ message, onConfirm, onCancel }: {
+  message: Message;
+  onConfirm: (msg: Message) => void;
+  onCancel: (msg: Message) => void;
+}) {
   const isUser = message.role === 'user';
 
   return (
@@ -360,85 +576,17 @@ function MessageBubble({ message }: { message: Message }) {
         )}
       </Box>
 
-      {/* Data table */}
-      {message.data && message.data.length > 0 && (
-        <Box sx={{
-          mt: 0.5,
-          border: '1px solid #e0e0e0',
-          borderRadius: '4px',
-          bgcolor: '#fff',
-          overflow: 'hidden',
-        }}>
-          <Box sx={{ overflowX: 'auto', maxHeight: 200 }}>
-            <Table size="small" sx={{ '& td, & th': { fontSize: 11, py: 0.3, px: 0.8 } }}>
-              <TableHead>
-                <TableRow sx={{ bgcolor: '#f5f5f5' }}>
-                  {Object.keys(message.data[0]).map(key => (
-                    <TableCell key={key} sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
-                      {key}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {message.data.slice(0, 10).map((row, i) => (
-                  <TableRow key={i}>
-                    {Object.values(row).map((val, j) => (
-                      <TableCell key={j} sx={{ whiteSpace: 'nowrap' }}>
-                        {val === null ? '—' : String(val)}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Box>
-          {message.data.length > 10 && (
-            <Typography sx={{ fontSize: 10, color: 'text.secondary', px: 1, py: 0.3, bgcolor: '#f5f5f5' }}>
-              Showing 10 of {message.rowCount ?? message.data.length} rows
-            </Typography>
-          )}
-        </Box>
+      {/* Action card */}
+      {message.action && message.actionStatus && (
+        <ActionCard
+          action={message.action}
+          status={message.actionStatus}
+          error={message.actionError}
+          onConfirm={() => onConfirm(message)}
+          onCancel={() => onCancel(message)}
+        />
       )}
 
-      {/* SQL toggle */}
-      {message.sql && (
-        <Box sx={{ mt: 0.3 }}>
-          <Typography
-            component="button"
-            onClick={() => setShowSQL(s => !s)}
-            sx={{
-              fontSize: 10,
-              color: 'text.secondary',
-              cursor: 'pointer',
-              border: 'none',
-              background: 'none',
-              p: 0,
-              textDecoration: 'underline',
-              '&:hover': { color: 'text.primary' },
-            }}
-          >
-            {showSQL ? 'Hide query' : 'View query'}
-          </Typography>
-          <Collapse in={showSQL}>
-            <Box sx={{
-              mt: 0.3,
-              p: 0.8,
-              bgcolor: '#263238',
-              color: '#e0e0e0',
-              borderRadius: '4px',
-              fontFamily: 'Roboto Mono, monospace',
-              fontSize: 10.5,
-              lineHeight: 1.4,
-              whiteSpace: 'pre-wrap',
-              overflowX: 'auto',
-              wordBreak: 'break-all',
-            }}>
-              {message.sql}
-            </Box>
-          </Collapse>
-        </Box>
-      )}
     </Box>
   );
 }
