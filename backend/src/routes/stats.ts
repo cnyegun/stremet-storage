@@ -4,6 +4,14 @@ import { asyncHandler } from '../middleware/asyncHandler';
 
 export const statsRouter = Router();
 
+import { WeightVerificationService } from '../services/weightVerificationService';
+
+// GET /api/stats/weight-verification — report weight sensor discrepancies
+statsRouter.get('/weight-verification', asyncHandler(async (_req, res) => {
+  const report = await WeightVerificationService.getDiscrepancyReport();
+  res.json({ data: report });
+}));
+
 // GET /api/stats — rack-first warehouse occupancy stats
 statsRouter.get('/', asyncHandler(async (_req, res) => {
   const racksResult = await pool.query(`

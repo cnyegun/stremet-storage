@@ -327,8 +327,6 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
   `, [item.quantity, itemWeightTotal, itemHeight, itemMaxFootprint, itemMinFootprint, item.is_stackable ?? true, preferredRackType]);
 
   // 3. Score and Sort using OptimizerService
-  const destination = item.next_x ? { x: item.next_x, y: item.next_y } : undefined;
-  
   const suggestions = slotsResult.rows
     .map(slot => {
       const score = OptimizerService.scoreSlot(
@@ -348,13 +346,13 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
           zone_y: slot.zone_y
         }, 
         {
+          type: item.type as 'customer_order' | 'general_stock' | 'raw_material' | 'work_in_progress',
           weight_kg: Number(item.weight_kg),
           turnover_class: (item.turnover_class || 'C') as 'A' | 'B' | 'C',
           quantity: Number(item.quantity),
-          is_stackable: item.is_stackable ?? true
-        },
-        undefined, 
-        destination
+          is_stackable: item.is_stackable ?? true,
+          delivery_date: item.delivery_date
+        }
       );
 
       return {
@@ -366,15 +364,16 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
     .slice(0, 3)
     .map(s => {
       const reasons: string[] = [];
+      if (item.type === 'customer_order') {
+          reasons.push("Prioritized for delivery door proximity (Right-Side Flow)");
+      } else if (item.type === 'raw_material' || item.type === 'work_in_progress') {
+          reasons.push("Located near production line (Left-Side Flow)");
+      }
+
       if (item.turnover_class === 'A' && [2, 3].includes(s.row_number)) {
-        reasons.push("Optimized for high-frequency access (Golden Zone)");
+        reasons.push("Ergonomic Golden Zone access");
       }
-      if (item.weight_kg > 25 && s.row_number <= 2) {
-        reasons.push("Ergonomic placement for heavy goods");
-      }
-      if (destination) {
-        reasons.push("Proximate to next production stage");
-      }
+      
       reasons.push(`${s.capacity - s.current_count} units available`);
 
       return {
@@ -514,7 +513,7 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
 
 // POST /api/items — create new item
 itemsRouter.post('/', asyncHandler(async (req, res) => {
-  const { item_code, customer_id, name, description, material, dimensions, weight_kg, type, order_number, quantity } = req.body;
+  const { item_code, customer_id, name, description, material, dimensions, weight_kg, type, order_number, quantity, delivery_date, production_priority } = req.body;
 
   if (!item_code || !name || !type) {
     res.status(400).json({ error: 'item_code, name, and type are required' });
@@ -530,10 +529,10 @@ itemsRouter.post('/', asyncHandler(async (req, res) => {
 
   const id = uuidv4();
   const result = await pool.query(
-    `INSERT INTO items (id, item_code, customer_id, name, description, material, dimensions, weight_kg, type, order_number, quantity)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    `INSERT INTO items (id, item_code, customer_id, name, description, material, dimensions, weight_kg, type, order_number, quantity, delivery_date, production_priority)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING *`,
-    [id, item_code, customer_id || null, name, description || '', material || '', dimensions || '', weight_kg || 0, type, order_number || null, quantity || 1]
+    [id, item_code, customer_id || null, name, description || '', material || '', dimensions || '', weight_kg || 0, type, order_number || null, quantity || 1, delivery_date || null, production_priority || 5]
   );
 
   res.status(201).json({ data: result.rows[0] });
@@ -542,7 +541,7 @@ itemsRouter.post('/', asyncHandler(async (req, res) => {
 // PUT /api/items/:id — update item
 itemsRouter.put('/:id', asyncHandler(async (req, res) => {
   const id = req.params.id as string;
-  const { name, description, material, dimensions, weight_kg, type, order_number, quantity } = req.body;
+  const { name, description, material, dimensions, weight_kg, type, order_number, quantity, delivery_date, production_priority } = req.body;
 
   const fields: string[] = [];
   const values: (string | number)[] = [];
@@ -556,6 +555,8 @@ itemsRouter.put('/:id', asyncHandler(async (req, res) => {
   if (type !== undefined) { fields.push(`type = $${idx++}`); values.push(type); }
   if (order_number !== undefined) { fields.push(`order_number = $${idx++}`); values.push(order_number); }
   if (quantity !== undefined) { fields.push(`quantity = $${idx++}`); values.push(quantity); }
+  if (delivery_date !== undefined) { fields.push(`delivery_date = $${idx++}`); values.push(delivery_date); }
+  if (production_priority !== undefined) { fields.push(`production_priority = $${idx++}`); values.push(production_priority); }
 
   if (fields.length === 0) {
     res.status(400).json({ error: 'No fields to update' });
