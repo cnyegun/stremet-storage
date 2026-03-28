@@ -27,11 +27,16 @@ function formatLocation(zoneCode: string, rackNum: number, shelfNum: number): st
 // --- Static Data ---
 
 const ZONES = [
-  { code: 'A', name: 'Zone A - Raw materials', description: 'Incoming raw sheet metal and materials before processing', color: '#6366F1', px: 50, py: 50, w: 250, h: 180 },
-  { code: 'B', name: 'Zone B - Work-in-progress', description: 'Partially processed items between production stages', color: '#F59E0B', px: 350, py: 50, w: 250, h: 180 },
-  { code: 'C', name: 'Zone C - Finished goods', description: 'Completed items ready for quality check or customer assignment', color: '#10B981', px: 650, py: 50, w: 250, h: 180 },
-  { code: 'D', name: 'Zone D - Customer orders', description: 'Customer-specific items packed and ready for shipping', color: '#3B82F6', px: 50, py: 300, w: 250, h: 180 },
-  { code: 'E', name: 'Zone E - General stock', description: 'Common premade parts and standard components', color: '#8B5CF6', px: 350, py: 300, w: 250, h: 180 },
+  { code: 'R1', name: 'Rack 1 - Raw North', description: 'Raw material intake', color: '#6366F1', px: 5, py: 10, w: 15, h: 25 },
+  { code: 'R2', name: 'Rack 2 - Raw South', description: 'Raw material intake', color: '#6366F1', px: 5, py: 40, w: 15, h: 25 },
+  { code: 'R3', name: 'Rack 3 - WIP Alpha', description: 'In-progress laser parts', color: '#F59E0B', px: 25, py: 10, w: 15, h: 25 },
+  { code: 'R4', name: 'Rack 4 - WIP Beta', description: 'In-progress bending parts', color: '#F59E0B', px: 25, py: 40, w: 15, h: 25 },
+  { code: 'R5', name: 'Rack 5 - WIP Gamma', description: 'In-progress assembly', color: '#F59E0B', px: 45, py: 10, w: 15, h: 25 },
+  { code: 'R6', name: 'Rack 6 - Finished A', description: 'Ready for shipping', color: '#10B981', px: 65, py: 10, w: 15, h: 25 },
+  { code: 'R7', name: 'Rack 7 - Finished B', description: 'Ready for shipping', color: '#10B981', px: 65, py: 40, w: 15, h: 25 },
+  { code: 'R8', name: 'Rack 8 - Custom A', description: 'Urgent customer orders', color: '#3B82F6', px: 85, py: 10, w: 15, h: 25 },
+  { code: 'R9', name: 'Rack 9 - Custom B', description: 'Standard customer orders', color: '#3B82F6', px: 85, py: 40, w: 15, h: 25 },
+  { code: 'R10', name: 'Rack 10 - Stock', description: 'General hardware and parts', color: '#8B5CF6', px: 45, py: 40, w: 15, h: 25 },
 ];
 
 const CUSTOMERS = [
@@ -126,14 +131,14 @@ async function seed(): Promise<void> {
     }
     console.log('  zones: 5');
 
-    // --- Racks (5 per zone) ---
+    // --- Racks (4 Rows per Physical Unit) ---
     interface RackRecord { id: string; zoneCode: string; rackNum: number }
     const racks: RackRecord[] = [];
     for (const z of ZONES) {
-      for (let r = 1; r <= 5; r++) {
+      for (let r = 1; r <= 4; r++) {
         const id = uuidv4();
-        const code = `${z.code}-R${r}`;
-        const label = `Rack ${r} (${z.name.split(' - ')[1] || z.name})`;
+        const code = `${z.code}-Row${r}`;
+        const label = `Row ${r} (Rack ${z.code})`;
         racks.push({ id, zoneCode: z.code, rackNum: r });
         await client.query(
           `INSERT INTO racks (id, zone_id, code, label, description, rack_type, row_count, column_count, display_order, position_in_zone, total_shelves)
@@ -142,7 +147,7 @@ async function seed(): Promise<void> {
         );
       }
     }
-    console.log('  racks: 25');
+    console.log('  rows (racks in DB): 40');
 
     // --- Shelf slots (4 rows x 10 columns per rack) ---
     interface SlotRecord { id: string; rackId: string; zoneCode: string; rackNum: number; rowNum: number; colNum: number; capacity: number }
@@ -151,18 +156,18 @@ async function seed(): Promise<void> {
       for (let r = 1; r <= 4; r++) {
         for (let c = 1; c <= 10; c++) {
           const id = uuidv4();
-          const capacity = randomInt(6, 12);
+          const capacity = randomInt(10, 20);
           const shelfNumber = (r - 1) * 10 + c;
           slots.push({ id, rackId: rack.id, zoneCode: rack.zoneCode, rackNum: rack.rackNum, rowNum: r, colNum: c, capacity });
           await client.query(
-            `INSERT INTO shelf_slots (id, rack_id, shelf_number, row_number, column_number, capacity, current_count, max_height, max_weight_kg)
-             VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8)`,
-            [id, rack.id, shelfNumber, r, c, capacity, randomChoice([400, 600, 800, 1000]), randomInt(500, 1500)]
+            `INSERT INTO shelf_slots (id, rack_id, shelf_number, row_number, column_number, capacity, current_count, max_height, max_weight_kg, measured_weight_kg)
+             VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, 0.00)`,
+            [id, rack.id, shelfNumber, r, c, capacity, randomChoice([400, 600, 800, 1000]), 1500]
           );
         }
       }
     }
-    console.log('  shelf_slots (cells): 1000');
+    console.log('  shelf_slots (cells): 400');
 
     // --- Customers ---
     const customerIds: Record<string, string> = {};
@@ -177,7 +182,7 @@ async function seed(): Promise<void> {
     }
     console.log('  customers: 8');
 
-    // --- Items (~200) ---
+    // --- Items (~250 total with logistical types) ---
     interface ItemRecord {
       id: string;
       code: string;
@@ -188,9 +193,34 @@ async function seed(): Promise<void> {
     }
     const items: ItemRecord[] = [];
 
-    // Customer order items (~150)
+    // 1. Raw Materials (Left Side Bias)
+    for (let i = 0; i < 30; i++) {
+        const id = uuidv4();
+        const material = randomChoice(MATERIALS);
+        const itemCode = `RAW-${String(i+1).padStart(3, '0')}`;
+        items.push({ id, code: itemCode, customerId: null, customerCode: null, type: 'raw_material', name: `${material} Sheet` });
+        await client.query(
+            `INSERT INTO items (id, item_code, name, material, weight_kg, type, quantity)
+             VALUES ($1, $2, $3, $4, $5, 'raw_material', $6)`,
+            [id, itemCode, `${material} Sheet`, material, randomInt(20, 100), randomInt(5, 20)]
+        );
+    }
+
+    // 2. Work in Progress (Left/Mid Bias)
+    for (let i = 0; i < 40; i++) {
+        const id = uuidv4();
+        const itemCode = `WIP-${String(i+1).padStart(3, '0')}`;
+        items.push({ id, code: itemCode, customerId: null, customerCode: null, type: 'work_in_progress', name: `Interim Part ${i+1}` });
+        await client.query(
+            `INSERT INTO items (id, item_code, name, type, weight_kg, quantity)
+             VALUES ($1, $2, $3, 'work_in_progress', $4, $5)`,
+            [id, itemCode, `Interim Part ${i+1}`, randomInt(5, 30), randomInt(10, 50)]
+        );
+    }
+
+    // 3. Customer order items (Finished Goods - Right Side Bias)
     for (const cust of CUSTOMERS) {
-      const numItems = randomInt(15, 22);
+      const numItems = randomInt(10, 15);
       for (let i = 0; i < numItems; i++) {
         const id = uuidv4();
         const partType = randomChoice(PART_TYPES);
@@ -205,12 +235,16 @@ async function seed(): Promise<void> {
         const dimensions = `${w}x${h}x${thickness}mm`;
         const weightKg = parseFloat(((w * h * thickness * 0.0000079).toFixed(2)));
         const orderNumber = `ORD-${cust.code}-${2026}-${String(randomInt(1, 50)).padStart(3, '0')}`;
+        
+        // Delivery date between 1 and 30 days in future
+        const deliveryDate = new Date();
+        deliveryDate.setDate(deliveryDate.getDate() + randomInt(1, 30));
 
         items.push({ id, code: itemCode, customerId: customerIds[cust.code], customerCode: cust.code, type: 'customer_order', name });
         await client.query(
-          `INSERT INTO items (id, item_code, customer_id, name, description, material, dimensions, weight_kg, type, order_number, quantity)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-          [id, itemCode, customerIds[cust.code], name, `${partType} component for ${cust.name}`, material, dimensions, weightKg, 'customer_order', orderNumber, randomInt(1, 50)]
+          `INSERT INTO items (id, item_code, customer_id, name, description, material, dimensions, weight_kg, type, order_number, quantity, delivery_date)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [id, itemCode, customerIds[cust.code], name, `${partType} component for ${cust.name}`, material, dimensions, weightKg, 'customer_order', orderNumber, randomInt(1, 50), deliveryDate]
         );
       }
     }
@@ -309,10 +343,16 @@ async function seed(): Promise<void> {
         [assignmentId, item.id, slot.id, unitCode, qty, checkedInAt, worker]
       );
 
-      // Update shelf slot count
+      // Update shelf slot count and sync sensor weight
+      const itemWeight = Number(item.weight_kg) || 5;
+      const totalAddedWeight = itemWeight * qty;
       await client.query(
-        `UPDATE shelf_slots SET current_count = current_count + 1 WHERE id = $1`,
-        [slot.id]
+        `UPDATE shelf_slots 
+         SET current_count = current_count + 1, 
+             current_weight_kg = current_weight_kg + $1,
+             measured_weight_kg = measured_weight_kg + $1
+         WHERE id = $2`,
+        [totalAddedWeight, slot.id]
       );
 
       const location = formatLocation(slot.zoneCode, slot.rackNum, slot.rowNum);
@@ -475,6 +515,14 @@ async function seed(): Promise<void> {
 
     await client.query('COMMIT');
     console.log('Seed complete.');
+
+    // Introduce some "Real World" sensor discrepancies for demo
+    await pool.query(`
+        UPDATE shelf_slots 
+        SET measured_weight_kg = measured_weight_kg + 25.5 
+        WHERE id IN (SELECT id FROM shelf_slots WHERE current_count > 0 ORDER BY random() LIMIT 5)
+    `);
+    console.log('  injected 5 sensor discrepancies for testing.');
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
