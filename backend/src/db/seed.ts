@@ -29,7 +29,12 @@ const MACHINES = [
   { code: 'QC-1', name: 'Quality Check', category: 'sheet_metal' },
 ];
 
-async function seed() {
+const WORKERS = [
+  'Matti Virtanen', 'Juha Korhonen', 'Mikko Nieminen', 'Timo Mäkelä', 'Antti Hämäläinen', 
+  'Pekka Laine', 'Sari Järvinen', 'Tuomas Lehtonen', 'Ville Heikkinen', 'Lauri Koskinen',
+];
+
+async function seed(): Promise<void> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
