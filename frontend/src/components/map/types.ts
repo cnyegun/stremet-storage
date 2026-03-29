@@ -19,6 +19,9 @@ export interface MapCell {
   max_volume_m3: number;
   current_volume_m3: number;
   current_count: number;
+  current_weight_kg?: number;
+  measured_weight_kg?: number;
+  weight_discrepancy_threshold?: number;
   items: MapItem[];
   checkin_href: string;
 }
@@ -33,12 +36,11 @@ export interface MapRack {
   column_count: number;
   occupancy_used: number;
   occupancy_total: number;
-  cells_in_use: number;
   cells: MapCell[];
 }
 
 export interface MapStatsData {
-  total_volume_stored: number;
+  total_items_stored: number;
   total_slots: number;
   occupied_slots: number;
   available_slots: number;

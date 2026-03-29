@@ -92,9 +92,9 @@ export default function RackDetailPage() {
         <Stack direction="row" spacing={3} flexWrap="wrap" mb={1.5}>
           <Typography variant="body2" fontWeight={600}>{rack.row_count} levels</Typography>
           <Typography variant="body2" fontWeight={600}>{rack.column_count} columns</Typography>
-          <Typography variant="body2" color="text.secondary">{rack.occupancy_used.toFixed(1)} / {rack.occupancy_total.toFixed(1)} m³ total volume used</Typography>
+          <Typography variant="body2" color="text.secondary">{Number(rack.occupancy_used).toFixed(1)} / {Number(rack.occupancy_total).toFixed(1)} capacity used</Typography>
         </Stack>
-        <OccupancyBar used={rack.occupancy_used} total={rack.occupancy_total} label="Standard Volumetric Utilization" />
+        <OccupancyBar used={rack.occupancy_used} total={rack.occupancy_total} label="Rack occupancy" />
       </Paper>
 
       <Paper variant="outlined">
@@ -113,12 +113,29 @@ export default function RackDetailPage() {
                 <TableRow key={row.rowNumber}>
                   <TableCell sx={{ fontWeight: 600, bgcolor: 'grey.50' }}>Lvl {row.rowNumber}</TableCell>
                   {row.cells.map((cell) => {
+                    const standardMax = 19.4;
+                    const currentVol = cell.current_volume_m3 || 0;
+                    const ratio = currentVol / standardMax;
+                    const percentage = Math.round(ratio * 100);
+                    const palette = getOccupancyPalette(currentVol, standardMax);
+                    
+                    const weightDiff = Math.abs((cell.measured_weight_kg || 0) - (cell.current_weight_kg || 0));
+                    const hasWeightAlert = weightDiff > (cell.weight_discrepancy_threshold || 5);
+
                     return (
                       <TableCell key={cell.id} sx={{ verticalAlign: 'top', p: 1 }}>
-                        <Box sx={{ border: 1, borderColor: 'divider', p: 1, borderRadius: 1, minHeight: 80 }}>
-                          <OccupancyBar used={cell.current_volume_m3} total={cell.max_volume_m3} compact />
-                          <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontSize: '0.65rem' }}>
-                            {cell.current_volume_m3.toFixed(2)} m³ occupied
+                        <Box sx={{ border: 1, borderColor: hasWeightAlert ? 'error.main' : palette.border, bgcolor: palette.fill, p: 1, borderRadius: 1, minHeight: 80 }}>
+                          <Typography variant="body2" fontWeight={500}>{cell.current_count === 0 ? 'Empty' : `${cell.current_count} items`}</Typography>
+                          
+                          {/* Weight Alert UI */}
+                          {hasWeightAlert && (
+                            <Typography variant="caption" color="error.main" fontWeight={700} sx={{ display: 'block', mt: 0.5 }}>
+                              ⚠️ Mismatch: Expected {cell.current_weight_kg}kg, Sensor reads {cell.measured_weight_kg}kg
+                            </Typography>
+                          )}
+
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, fontSize: '0.65rem', fontWeight: 600 }}>
+                            {currentVol.toFixed(1)} / {standardMax} ({percentage}%)
                           </Typography>
                           <Stack spacing={0.25} mt={1}>
                             {cell.items.map((item) => (

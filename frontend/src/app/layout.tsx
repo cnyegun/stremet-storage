@@ -24,7 +24,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body suppressHydrationWarning>
         <ThemeRegistry>
           <WorkerSessionProvider>
-            <ToastProvider>            <div style={{ minHeight: '100vh', backgroundColor: 'var(--mui-palette-background-default)' }}>
+          <ToastProvider>
+            <div style={{ minHeight: '100vh', backgroundColor: 'var(--mui-palette-background-default)' }}>
               <header style={{ background: '#263238', color: '#fff', borderBottom: '2px solid #1565C0' }}>
                 <div className="page-shell" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, paddingBlock: 6 }}>
                   <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none', color: 'inherit' }}>

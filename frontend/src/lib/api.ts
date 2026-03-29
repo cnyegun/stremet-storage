@@ -127,8 +127,11 @@ export const api = {
 
   globalSearch: (query: string) => request<ApiResponse<GlobalSearchResponse>>(`/search?q=${encodeURIComponent(query)}`),
 
-  lookupUnit: (unitCode: string) =>
+  getTrackingUnit: (unitCode: string) =>
     request<ApiResponse<UnitLookupResult>>(`/tracking/unit/${encodeURIComponent(unitCode)}`),
+
+  getSuggestion: (itemId: string) =>
+    request<ApiResponse<LocationSuggestion[]>>(`/items/${encodeURIComponent(itemId)}/suggest-location`),
 
   sendAssistantMessage: (body: AssistantRequest) =>
     request<ApiResponse<AssistantResponse>>('/assistant', {

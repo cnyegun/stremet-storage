@@ -1,14 +1,3 @@
-import type { PoolClient } from 'pg';
-
-export async function getExistingTrackingUnitCodes(client: PoolClient): Promise<string[]> {
-  const result = await client.query(`
-    SELECT unit_code FROM storage_assignments
-    UNION
-    SELECT unit_code FROM machine_assignments
-  `);
-  return result.rows.map((row) => row.unit_code);
-}
-
 const TRACKING_UNIT_PREFIX_LENGTH = 16;
 
 export function sanitizeTrackingUnitPrefix(itemCode: string): string {

@@ -27,7 +27,5 @@ ADD COLUMN IF NOT EXISTS volume_m3 DECIMAL(10,4) DEFAULT 0.0000;
 
 -- 4. Clean up legacy Zone/Type constraints if any remain
 ALTER TABLE racks DROP CONSTRAINT IF EXISTS racks_rack_type_check;
-ALTER TABLE racks ADD CONSTRAINT racks_rack_type_check 
-CHECK (rack_type = 'general_stock');
 
 COMMIT;

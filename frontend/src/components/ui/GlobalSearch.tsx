@@ -115,6 +115,7 @@ export function GlobalSearch() {
           onFocus={() => { if (results) setOpen(true); }}
           onKeyDown={handleKeyDown}
           placeholder="Search items, machines, customers...  (/)"
+          suppressHydrationWarning
           sx={{
             width: '100%',
             height: 32,

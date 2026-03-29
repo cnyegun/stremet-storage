@@ -11,8 +11,17 @@ racksRouter.get('/', asyncHandler(async (_req, res) => {
       r.*,
       COUNT(DISTINCT ss.id)::int AS cell_count,
       COALESCE(SUM(ss.max_volume_m3), 0)::float AS total_capacity,
-      COALESCE(SUM(ss.current_volume_m3), 0)::float AS volume_stored,
-      COUNT(DISTINCT ss.id) FILTER (WHERE ss.current_count > 0)::int AS cells_in_use
+      COALESCE((
+        SELECT SUM(i.volume_m3 * sa.quantity)
+        FROM storage_assignments sa
+        JOIN items i ON sa.item_id = i.id
+        JOIN shelf_slots ss2 ON sa.shelf_slot_id = ss2.id
+        WHERE ss2.rack_id = r.id AND sa.checked_out_at IS NULL
+      ), 0)::float AS items_stored,
+      COUNT(DISTINCT ss.id) FILTER (WHERE EXISTS (
+        SELECT 1 FROM storage_assignments sa2 
+        WHERE sa2.shelf_slot_id = ss.id AND sa2.checked_out_at IS NULL
+      ))::int AS cells_in_use
     FROM racks r
     LEFT JOIN shelf_slots ss ON ss.rack_id = r.id
     GROUP BY r.id
@@ -29,10 +38,16 @@ racksRouter.get('/:id', asyncHandler(async (req, res) => {
   const rackResult = await pool.query(`
     SELECT r.*,
       COUNT(DISTINCT ss.id)::int AS total_cells,
-      COUNT(DISTINCT ss.id) FILTER (WHERE ss.current_count > 0)::int AS occupied_cells,
-      COALESCE(SUM(ss.current_count), 0)::int AS total_items,
-      COALESCE(SUM(ss.current_volume_m3), 0)::float AS volume_used,
-      COALESCE(SUM(ss.max_volume_m3), 0)::float AS total_volume_capacity
+      COUNT(DISTINCT ss.id) FILTER (WHERE EXISTS (
+        SELECT 1 FROM storage_assignments sa2 
+        WHERE sa2.shelf_slot_id = ss.id AND sa2.checked_out_at IS NULL
+      ))::int AS occupied_cells,
+      COALESCE((
+        SELECT SUM(sa3.quantity)
+        FROM storage_assignments sa3
+        JOIN shelf_slots ss3 ON sa3.shelf_slot_id = ss3.id
+        WHERE ss3.rack_id = r.id AND sa3.checked_out_at IS NULL
+      ), 0)::int AS total_items
     FROM racks r
     LEFT JOIN shelf_slots ss ON ss.rack_id = r.id
     WHERE r.id = $1
@@ -45,9 +60,25 @@ racksRouter.get('/:id', asyncHandler(async (req, res) => {
   }
 
   const shelvesResult = await pool.query(`
-    SELECT ss.*,
+    SELECT 
+      ss.id, ss.rack_id, ss.shelf_number, ss.row_number, ss.column_number,
+      ss.max_volume_m3, ss.max_weight_kg, ss.max_height, ss.max_width, ss.max_length,
+      ss.width_m, ss.depth_m, ss.height_m,
+      ss.measured_weight_kg, ss.current_weight_kg, ss.weight_discrepancy_threshold,
+      COALESCE((
+        SELECT SUM(i2.volume_m3 * sa2.quantity)
+        FROM storage_assignments sa2
+        JOIN items i2 ON sa2.item_id = i2.id
+        WHERE sa2.shelf_slot_id = ss.id AND sa2.checked_out_at IS NULL
+      ), 0)::float AS current_volume_m3,
+      COALESCE((
+        SELECT COUNT(*)::int
+        FROM storage_assignments sa3
+        WHERE sa3.shelf_slot_id = ss.id AND sa3.checked_out_at IS NULL
+      ), 0) AS current_count,
       r.code AS rack_code,
       r.label AS rack_label,
+      'debug-dynamic-v1' as _version,
       COALESCE(json_agg(
         json_build_object(
            'assignment_id', sa.id,

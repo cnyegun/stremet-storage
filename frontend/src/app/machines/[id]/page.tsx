@@ -46,6 +46,7 @@ const MACHINE_STATUS_OPTIONS = [
   { value: 'processing', label: 'Processing' },
   { value: 'needs_attention', label: 'Needs attention' },
   { value: 'ready_for_storage', label: 'Ready for storage' },
+  { value: 'processed', label: 'Processed' },
 ] as const;
 
 function machineStatusVariant(status: string): 'default' | 'primary' | 'success' | 'warning' | 'danger' {
@@ -91,6 +92,9 @@ export default function MachineDetailPage() {
   const [moveWorkerName, setMoveWorkerName] = useState('');
   const [moveNotes, setMoveNotes] = useState('');
   const [moveSubmitting, setMoveSubmitting] = useState(false);
+  const [suggestionLoading, setSuggestionLoading] = useState(false);
+  const [pendingSuggestedSlotId, setPendingSuggestedSlotId] = useState<string | null>(null);
+  const [recommendedStorage, setRecommendedStorage] = useState<{ rack_id: string; shelf_slot_id: string; label: string; reason?: string } | null>(null);
   const [statusOpen, setStatusOpen] = useState(false);
   const [statusUnit, setStatusUnit] = useState<MachineDetailItem | null>(null);
   const [nextStatus, setNextStatus] = useState('processing');
@@ -150,8 +154,45 @@ export default function MachineDetailPage() {
       return;
     }
 
-    void api.getRack(moveRackId).then((response) => setMoveRackDetail(response.data));
-  }, [moveDestinationType, moveOpen, moveRackId]);
+    void api.getRack(moveRackId).then((response) => {
+      setMoveRackDetail(response.data);
+      if (pendingSuggestedSlotId && response.data.shelves.some(s => s.id === pendingSuggestedSlotId)) {
+        console.log('[DEBUG] Applying pending slot suggestion:', pendingSuggestedSlotId);
+        setMoveShelfSlotId(pendingSuggestedSlotId);
+        setPendingSuggestedSlotId(null);
+      }
+    });
+  }, [moveDestinationType, moveOpen, moveRackId, pendingSuggestedSlotId]);
+
+  useEffect(() => {
+    if (moveOpen && moveDestinationType === 'shelf' && moveUnit?.item_id) {
+      setSuggestionLoading(true);
+      void api.getSuggestion(moveUnit.item_id)
+        .then((response) => {
+          if (response.data && response.data.length > 0) {
+            const best = response.data[0];
+            setRecommendedStorage({
+              rack_id: best.rack_id,
+              shelf_slot_id: best.shelf_slot_id,
+              label: `${best.rack_code} / R${best.row_number}C${best.column_number}`,
+              reason: best.reason
+            });
+            // Automatically select the suggested rack and queue the slot selection
+            setMoveRackId(best.rack_id);
+            setPendingSuggestedSlotId(best.shelf_slot_id);
+          } else {
+            setRecommendedStorage(null);
+          }
+        })
+        .catch((err) => {
+          setRecommendedStorage(null);
+          showToast('Storage auto-suggest unavailable for this item.', 'warning');
+        })
+        .finally(() => setSuggestionLoading(false));
+    } else {
+       setRecommendedStorage(null);
+    }
+  }, [moveOpen, moveDestinationType, moveUnit?.item_id]);
 
   useEffect(() => {
     if (!importOpen || !debouncedImportQuery.trim()) {
@@ -220,21 +261,6 @@ export default function MachineDetailPage() {
     setMoveWorkerName('');
     setMoveNotes('');
     setMoveOpen(true);
-
-    // Auto-suggest optimal storage location
-    void api.suggestLocation(item.item_id).then((res) => {
-      if (res.data && res.data.length > 0) {
-        const best = res.data[0];
-        setMoveRackId(best.rack_id);
-        
-        // Fetch rack detail to populate the cell dropdown, then select the cell
-        void api.getRack(best.rack_id).then((rackRes) => {
-          setMoveRackDetail(rackRes.data);
-          setMoveShelfSlotId(best.shelf_slot_id);
-          showToast(`Optimizer: Pre-selected ${best.location}`);
-        });
-      }
-    });
   }
 
   function openStatusDialog(item: MachineDetailItem, statusOverride?: string) {
@@ -636,27 +662,49 @@ export default function MachineDetailPage() {
           />
 
           {moveDestinationType === 'shelf' ? (
-            <Grid container spacing={2}>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Select
-                  label="Destination rack"
-                  value={moveRackId}
-                  onChange={(event) => {
-                    setMoveRackId(event.target.value);
-                    setMoveShelfSlotId('');
+            <Stack spacing={2}>
+              {suggestionLoading && (
+                <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <LoadingSpinner /> Analyzing volumetric limits...
+                </Typography>
+              )}
+              {recommendedStorage && (
+                <Paper 
+                  variant="outlined" 
+                  sx={{ p: 2, bgcolor: 'primary.50', borderColor: 'primary.200', cursor: 'pointer', '&:hover': { bgcolor: 'primary.100' } }}
+                  onClick={() => {
+                    setMoveRackId(recommendedStorage.rack_id);
+                    setPendingSuggestedSlotId(recommendedStorage.shelf_slot_id);
                   }}
-                   options={[{ value: '', label: 'Select rack' }, ...racks.map((rack) => ({ value: rack.id, label: rackDisplayLabel(rack) }))]}
-                 />
+                >
+                  <Typography variant="subtitle2" color="primary.main" mb={0.5}>💡 Recommended storage</Typography>
+                  <Typography variant="body2" fontWeight={500}>{recommendedStorage.label}</Typography>
+                  {recommendedStorage.reason && <Typography variant="caption" color="text.secondary">{recommendedStorage.reason}</Typography>}
+                  <Typography variant="caption" color="primary.main" display="block" mt={1}>Click to apply</Typography>
+                </Paper>
+              )}
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Select
+                    label="Destination rack"
+                    value={moveRackId}
+                    onChange={(event) => {
+                      setMoveRackId(event.target.value);
+                      setMoveShelfSlotId('');
+                    }}
+                    options={[{ value: '', label: 'Select rack' }, ...racks.map((rack) => ({ value: rack.id, label: rackDisplayLabel(rack) }))]}
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Select
+                    label="Destination cell"
+                    value={moveShelfSlotId}
+                    onChange={(event) => setMoveShelfSlotId(event.target.value)}
+                    options={[{ value: '', label: 'Select cell' }, ...availableMoveShelves]}
+                  />
+                </Grid>
               </Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Select
-                  label="Destination cell"
-                  value={moveShelfSlotId}
-                  onChange={(event) => setMoveShelfSlotId(event.target.value)}
-                  options={[{ value: '', label: 'Select cell' }, ...availableMoveShelves]}
-                />
-              </Grid>
-            </Grid>
+            </Stack>
           ) : (
             <Select
               label="Destination machine"

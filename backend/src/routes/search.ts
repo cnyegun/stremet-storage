@@ -16,7 +16,7 @@ searchRouter.get('/', asyncHandler(async (req, res) => {
   const term = `%${q.trim()}%`;
 
   const itemsResult = await pool.query(`
-    SELECT i.id, i.item_code, i.name, i.type, i.volume_m3, c.name AS customer_name,
+    SELECT i.id, i.item_code, i.name, i.type, c.name AS customer_name,
       CASE WHEN latest_sa.id IS NOT NULL THEN
         json_build_object(
           'unit_code', latest_sa.unit_code,
@@ -56,7 +56,7 @@ searchRouter.get('/', asyncHandler(async (req, res) => {
 
   const customersResult = await pool.query(`
     SELECT c.id, c.name, c.code,
-      COALESCE(SUM(i.volume_m3 * sa.quantity) FILTER (WHERE sa.checked_out_at IS NULL), 0)::float AS volume_in_storage
+      COUNT(DISTINCT sa.id) FILTER (WHERE sa.checked_out_at IS NULL)::int AS items_in_storage
     FROM customers c
     LEFT JOIN items i ON i.customer_id = c.id
     LEFT JOIN storage_assignments sa ON sa.item_id = i.id
@@ -68,7 +68,7 @@ searchRouter.get('/', asyncHandler(async (req, res) => {
 
   const locationsResult = await pool.query(`
     SELECT r.id AS rack_id, r.code AS rack_code, r.label AS rack_label, r.rack_type,
-      COALESCE(SUM(ss.current_volume_m3), 0)::float AS volume_stored
+      COALESCE(SUM(ss.current_count), 0)::int AS items_stored
     FROM racks r
     LEFT JOIN shelf_slots ss ON ss.rack_id = r.id
     WHERE r.code ILIKE $1 OR r.label ILIKE $1 OR r.rack_type::text ILIKE $1
@@ -79,10 +79,9 @@ searchRouter.get('/', asyncHandler(async (req, res) => {
 
   const machinesResult = await pool.query(`
     SELECT m.id, m.name, m.code, m.category,
-      COALESCE(SUM(i.volume_m3 * ma.quantity) FILTER (WHERE ma.removed_at IS NULL), 0)::float AS active_volume
+      COUNT(ma.id) FILTER (WHERE ma.removed_at IS NULL)::int AS active_items
     FROM machines m
     LEFT JOIN machine_assignments ma ON ma.machine_id = m.id
-    LEFT JOIN items i ON ma.item_id = i.id
     WHERE m.name ILIKE $1 OR m.code ILIKE $1 OR m.category ILIKE $1
     GROUP BY m.id
     ORDER BY m.code

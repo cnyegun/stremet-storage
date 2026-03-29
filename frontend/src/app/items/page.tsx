@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
-import type { Customer, ItemFilters, ItemType, ItemWithLocation, RackWithStats } from '@shared/types';
+import type { Customer, DuplicateWarning, ItemFilters, ItemType, ItemWithLocation, RackWithStats } from '@shared/types';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { FilterBar } from '@/components/ui/FilterBar';
@@ -23,6 +23,7 @@ const PAGE_SIZE = 25;
 export default function ItemsPage() {
   const router = useRouter();
   const [items, setItems] = useState<ItemWithLocation[]>([]);
+  const [duplicates, setDuplicates] = useState<DuplicateWarning[]>([]);
   const [total, setTotal] = useState(0);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [racks, setRacks] = useState<RackWithStats[]>([]);
@@ -37,11 +38,12 @@ export default function ItemsPage() {
   });
 
   useEffect(() => {
-    void Promise.all([api.getCustomers(), api.getRacks(), api.getItems({ per_page: 100, page: 1 })])
-      .then(([customerResponse, racksResponse, itemResponse]) => {
+    void Promise.all([api.getCustomers(), api.getRacks(), api.getItems({ per_page: 100, page: 1 }), api.getDuplicateWarnings()])
+      .then(([customerResponse, racksResponse, itemResponse, duplicateResponse]) => {
         setCustomers(customerResponse.data);
         setRacks(racksResponse.data);
         setMaterials(Array.from(new Set(itemResponse.data.map((item) => item.material).filter((m): m is string => Boolean(m)))).sort());
+        setDuplicates(duplicateResponse.data);
       })
       .catch((err: Error) => setError(err.message));
   }, []);
@@ -57,8 +59,15 @@ export default function ItemsPage() {
     setError(null);
     void api
       .getItems(filters)
-      .then((response) => { setItems(response.data); setTotal(response.total); })
-      .catch((err: Error) => setError(err.message))
+      .then((response) => { 
+        console.log('Frontend received items:', response.data.length);
+        setItems(response.data); 
+        setTotal(response.total); 
+      })
+      .catch((err: Error) => {
+        console.error('Error fetching items:', err);
+        setError(err.message);
+      })
       .finally(() => setLoading(false));
   }, [filters]);
 
@@ -94,6 +103,16 @@ export default function ItemsPage() {
         <Typography variant="h3">Items</Typography>
         <Typography variant="caption" color="text.secondary">{total} records</Typography>
       </Stack>
+
+      {duplicates.length > 0 && (
+        <Paper sx={{ p: 2, bgcolor: '#fff4e5', color: '#663c00', border: '1px solid #ffb74d' }}>
+          <Typography variant="subtitle2" fontWeight="bold">⚠️ Duplicate Items Detected</Typography>
+          <Typography variant="body2">
+            The following items are stored in multiple locations: {duplicates.map(d => d.item_code).join(', ')}. 
+            Consider consolidating them to free up shelf space.
+          </Typography>
+        </Paper>
+      )}
 
       <SearchBar placeholder="Item code, name, customer, or order number" value={filters.search || ''} onChange={(search) => updateFilter({ search })} />
 

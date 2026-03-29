@@ -58,6 +58,9 @@ export default function ItemDetailPage() {
   const [moveQuantity, setMoveQuantity] = useState(1);
   const [moveSource, setMoveSource] = useState<MoveSource | null>(null);
   const [moveOpen, setMoveOpen] = useState(false);
+  const [suggestionLoading, setSuggestionLoading] = useState(false);
+  const [pendingSuggestedSlotId, setPendingSuggestedSlotId] = useState<string | null>(null);
+  const [recommendedStorage, setRecommendedStorage] = useState<{ rack_id: string; shelf_slot_id: string; label: string; reason?: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,14 +85,52 @@ export default function ItemDetailPage() {
       setRackDetail(null);
       return;
     }
-    void api.getRack(selectedRackId).then((r) => setRackDetail(r.data));
-  }, [selectedRackId]);
+    void api.getRack(selectedRackId).then((r) => {
+      setRackDetail(r.data);
+      // If we have a pending suggestion for this rack, apply it now
+      if (pendingSuggestedSlotId && r.data.shelves.some(s => s.id === pendingSuggestedSlotId)) {
+        console.log('[DEBUG] Applying pending slot suggestion:', pendingSuggestedSlotId);
+        setSelectedSlotId(pendingSuggestedSlotId);
+        setPendingSuggestedSlotId(null);
+      }
+    });
+  }, [selectedRackId, pendingSuggestedSlotId]);
+
+  useEffect(() => {
+    if (moveOpen && destType === 'storage' && item?.id && racks.length > 0) {
+      setSuggestionLoading(true);
+      void api.getSuggestion(item.id)
+        .then((response) => {
+          if (response.data && response.data.length > 0) {
+            const best = response.data[0];
+            setRecommendedStorage({
+              rack_id: best.rack_id,
+              shelf_slot_id: best.shelf_slot_id,
+              label: `${best.rack_code} / R${best.row_number}C${best.column_number}`,
+              reason: best.reason
+            });
+            // Automatically select the suggested rack and queue the slot selection
+            setSelectedRackId(best.rack_id);
+            setPendingSuggestedSlotId(best.shelf_slot_id);
+          } else {
+            setRecommendedStorage(null);
+          }
+        })
+        .catch((err) => {
+          setRecommendedStorage(null);
+          showToast('Storage auto-suggest unavailable for this item.', 'warning');
+        })
+        .finally(() => setSuggestionLoading(false));
+    } else {
+      setRecommendedStorage(null);
+    }
+  }, [moveOpen, destType, item?.id, racks.length]);
 
   const availableSlots = useMemo(
     () =>
       rackDetail?.shelves
-        .filter((cell) => cell.current_count < cell.capacity)
-        .map((cell) => ({ id: cell.id, label: `${rackDetail.code} / R${cell.row_number} / C${cell.column_number} (${cell.capacity - cell.current_count} free)` })) || [],
+        .filter((cell) => cell.current_volume_m3 < cell.max_volume_m3)
+        .map((cell) => ({ id: cell.id, label: `${rackDetail.code} / R${cell.row_number} / C${cell.column_number} (${(cell.max_volume_m3 - cell.current_volume_m3).toFixed(1)}m³ free)` })) || [],
     [rackDetail],
   );
 
@@ -366,7 +407,27 @@ export default function ItemDetailPage() {
           </Box>
 
           {destType === 'storage' ? (
-            <>
+            <Stack spacing={2}>
+              {suggestionLoading && (
+                <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <LoadingSpinner /> Analyzing volumetric limits...
+                </Typography>
+              )}
+              {recommendedStorage && (
+                <Paper 
+                  variant="outlined" 
+                  sx={{ p: 2, bgcolor: 'primary.50', borderColor: 'primary.200', cursor: 'pointer', '&:hover': { bgcolor: 'primary.100' } }}
+                  onClick={() => {
+                    setSelectedRackId(recommendedStorage.rack_id);
+                    setPendingSuggestedSlotId(recommendedStorage.shelf_slot_id);
+                  }}
+                >
+                  <Typography variant="subtitle2" color="primary.main" mb={0.5}>💡 Recommended storage</Typography>
+                  <Typography variant="body2" fontWeight={500}>{recommendedStorage.label}</Typography>
+                  {recommendedStorage.reason && <Typography variant="caption" color="text.secondary">{recommendedStorage.reason}</Typography>}
+                  <Typography variant="caption" color="primary.main" display="block" mt={1}>Click to apply</Typography>
+                </Paper>
+              )}
               <Select
                 label="Destination rack"
                 value={selectedRackId}
@@ -379,7 +440,7 @@ export default function ItemDetailPage() {
                 onChange={(event: any) => setSelectedSlotId(event.target.value)}
                 options={[{ label: 'Select cell', value: '' }, ...availableSlots.map((s) => ({ label: s.label, value: s.id }))]}
               />
-            </>
+            </Stack>
           ) : (
             <Select
               label="Destination machine"
