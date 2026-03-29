@@ -266,11 +266,9 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
 
   // 1. Get detailed item info, including next machine location
   const itemResult = await pool.query(`
-    SELECT i.*, c.code AS customer_code, 
-           m.position_x as next_x, m.position_y as next_y
+    SELECT i.*, c.code AS customer_code
     FROM items i
     LEFT JOIN customers c ON i.customer_id = c.id
-    LEFT JOIN machines m ON i.next_machine_id = m.id
     WHERE i.id = $1
   `, [id]);
 
@@ -309,7 +307,7 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
     JOIN racks r ON ss.rack_id = r.id
     WHERE 
       -- Volumetric Room (HARD CONSTRAINT)
-      (ss.max_volume_m3 - ss.current_volume_m3) >= ($1 * $2)
+      (ss.max_volume_m3 - ss.current_volume_m3) >= ($1::numeric * $2::numeric)
       -- Weight Limit (Dynamic Scale Check)
       AND (ss.max_weight_kg - ss.current_weight_kg) >= ($3 * $1)
       -- Vertical Clearance (Gravity Fix)
@@ -725,7 +723,7 @@ itemsRouter.post('/check-out', asyncHandler(async (req, res) => {
       );
     } else {
       const assignmentResult = await client.query(`
-        SELECT sa.*, ss.id AS slot_id, r.code AS rack_code, ss.row_number, ss.column_number, i.item_code
+        SELECT sa.*, ss.id AS slot_id, r.code AS rack_code, ss.row_number, ss.column_number, i.item_code, i.weight_kg, i.volume_m3
         FROM storage_assignments sa
         JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
         JOIN racks r ON ss.rack_id = r.id
@@ -748,11 +746,12 @@ itemsRouter.post('/check-out', asyncHandler(async (req, res) => {
         [checked_out_by, notes || null, assignment_id]
       );
 
-      // Update shelf count and weight
+      // Update shelf count, weight, and volume
       const weightToSubtract = (Number(assignment.weight_kg) || 0) * (Number(assignment.quantity) || 1);
+      const volumeToSubtract = (Number(assignment.volume_m3) || 0.1) * (Number(assignment.quantity) || 1);
       await client.query(
-        'UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), current_weight_kg = GREATEST(current_weight_kg - $1, 0), updated_at = NOW() WHERE id = $2',
-        [weightToSubtract, assignment.slot_id]
+        'UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), current_weight_kg = GREATEST(current_weight_kg - $1, 0), current_volume_m3 = GREATEST(current_volume_m3 - $2, 0), updated_at = NOW() WHERE id = $3',
+        [weightToSubtract, volumeToSubtract, assignment.slot_id]
       );
     }
 

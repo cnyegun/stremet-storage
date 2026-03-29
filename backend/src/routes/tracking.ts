@@ -131,6 +131,8 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
       shelf_slot_id?: string;
       machine_id?: string;
       status?: string;
+      quantity?: number;
+      unit_code?: string;
     } | null = null;
     let sourceType: 'shelf' | 'machine' | null = null;
 
@@ -178,7 +180,7 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
             await client.query(
                 `INSERT INTO activity_log (id, item_id, action, from_location, to_location, performed_by, notes)
                  VALUES ($1, $2, 'note_added', $3, $4, $5, $6)`,
-                [uuidv4(), itemId, 'note_added', location_code, location_code, performed_by, `Status toggled to ${nextStatus}`]
+                [uuidv4(), itemId, location_code, location_code, performed_by, `Status toggled to ${nextStatus}`]
             );
 
             await client.query('COMMIT');
@@ -202,8 +204,15 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
             // Checkout from old
             if (!currentAssignment) throw new Error('Unit not found or active.');
             if (sourceType === 'shelf') {
+                const itemResult = await client.query('SELECT weight_kg, volume_m3 FROM items WHERE id = $1', [itemId]);
+                const item = itemResult.rows[0];
+                const weightToSubtract = (Number(item.weight_kg) || 0) * (Number(currentAssignment.quantity) || 1);
+                const volumeToSubtract = (Number(item.volume_m3) || 0.1) * (Number(currentAssignment.quantity) || 1);
                 await client.query('UPDATE storage_assignments SET checked_out_at = NOW(), checked_out_by = $1 WHERE id = $2', [performed_by, currentAssignment.id]);
-                await client.query('UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0) WHERE id = $1', [currentAssignment.shelf_slot_id]);
+                await client.query(
+                    'UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), current_weight_kg = GREATEST(current_weight_kg - $1, 0), current_volume_m3 = GREATEST(current_volume_m3 - $2, 0), updated_at = NOW() WHERE id = $3',
+                    [weightToSubtract, volumeToSubtract, currentAssignment.shelf_slot_id]
+                );
             } else if (sourceType === 'machine') {
                 await client.query('UPDATE machine_assignments SET removed_at = NOW(), removed_by = $1 WHERE id = $2', [performed_by, currentAssignment.id]);
             }
@@ -211,10 +220,11 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
 
         // Create new machine assignment
         const newMaId = uuidv4();
+        const parentUnitCode = isUnit ? unitCode : null;
         await client.query(
-            `INSERT INTO machine_assignments (id, item_id, machine_id, unit_code, status, quantity, assigned_at, assigned_by)
-             VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)`,
-            [newMaId, itemId, machine.id, unitCode, 'queued', 1, performed_by]
+            `INSERT INTO machine_assignments (id, item_id, machine_id, unit_code, parent_unit_code, status, quantity, assigned_at, assigned_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)`,
+            [newMaId, itemId, machine.id, unitCode, parentUnitCode, 'queued', 1, performed_by]
         );
 
         await client.query(
@@ -248,18 +258,32 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
         if (sourceType === 'machine') {
             await client.query('UPDATE machine_assignments SET removed_at = NOW(), removed_by = $1 WHERE id = $2', [performed_by, currentAssignment.id]);
         } else if (sourceType === 'shelf') {
+            const itemResult = await client.query('SELECT weight_kg, volume_m3 FROM items WHERE id = $1', [itemId]);
+            const item = itemResult.rows[0];
+            const weightToSubtract = (Number(item.weight_kg) || 0) * (Number(currentAssignment.quantity) || 1);
+            const volumeToSubtract = (Number(item.volume_m3) || 0.1) * (Number(currentAssignment.quantity) || 1);
             await client.query('UPDATE storage_assignments SET checked_out_at = NOW(), checked_out_by = $1 WHERE id = $2', [performed_by, currentAssignment.id]);
-            await client.query('UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0) WHERE id = $1', [currentAssignment.shelf_slot_id]);
+            await client.query(
+                'UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), current_weight_kg = GREATEST(current_weight_kg - $1, 0), current_volume_m3 = GREATEST(current_volume_m3 - $2, 0), updated_at = NOW() WHERE id = $3',
+                [weightToSubtract, volumeToSubtract, currentAssignment.shelf_slot_id]
+            );
         }
 
         // Checkin to new shelf
+        const itemResult = await client.query('SELECT weight_kg, volume_m3 FROM items WHERE id = $1', [itemId]);
+        const itemData = itemResult.rows[0];
+        const weightToAdd = (Number(itemData.weight_kg) || 0) * 1;
+        const volumeToAdd = (Number(itemData.volume_m3) || 0.1) * 1;
         const newSaId = uuidv4();
         await client.query(
-            `INSERT INTO storage_assignments (id, item_id, shelf_slot_id, unit_code, quantity, checked_in_at, checked_in_by)
-             VALUES ($1, $2, $3, $4, $5, NOW(), $6)`,
-            [newSaId, itemId, shelf.id, unitCode, 1, performed_by]
+            `INSERT INTO storage_assignments (id, item_id, shelf_slot_id, unit_code, parent_unit_code, quantity, checked_in_at, checked_in_by)
+             VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)`,
+            [newSaId, itemId, shelf.id, unitCode, currentAssignment?.unit_code || null, 1, performed_by]
         );
-        await client.query('UPDATE shelf_slots SET current_count = current_count + 1 WHERE id = $1', [shelf.id]);
+        await client.query(
+            'UPDATE shelf_slots SET current_count = current_count + 1, current_weight_kg = current_weight_kg + $1, current_volume_m3 = current_volume_m3 + $2, updated_at = NOW() WHERE id = $3',
+            [weightToAdd, volumeToAdd, shelf.id]
+        );
 
         await client.query('COMMIT');
         res.json({ data: { unit_code: unitCode, location: location_code, status: 'stored', action: 'storage_checkin' } });
@@ -271,9 +295,9 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
         if (!isUnit || !currentAssignment) throw new Error("Unit not found or active.");
         
         if (sourceType === 'machine') {
-            await client.query('UPDATE machine_assignments SET removed_at = NOW(), removed_by = $1 WHERE id = $2', [performed_by, currentAssignment.id]);
+            await client.query('UPDATE machine_assignments SET removed_at = NOW(), removed_by = $1, notes = COALESCE(notes, $2) WHERE id = $3', [performed_by, 'Shipped via scan', currentAssignment.id]);
         } else {
-            await client.query('UPDATE storage_assignments SET checked_out_at = NOW(), checked_out_by = $1 WHERE id = $2', [performed_by, currentAssignment.id]);
+            await client.query('UPDATE storage_assignments SET checked_out_at = NOW(), checked_out_by = $1, notes = COALESCE(notes, $2) WHERE id = $3', [performed_by, 'Shipped via scan', currentAssignment.id]);
             await client.query('UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0) WHERE id = $1', [currentAssignment.shelf_slot_id]);
         }
 

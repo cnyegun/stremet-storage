@@ -10,6 +10,7 @@ import { statsRouter } from './routes/stats';
 import { customersRouter } from './routes/customers';
 import { machinesRouter } from './routes/machines';
 import { assistantRouter } from './routes/assistant';
+import { dashboardRouter } from './routes/dashboard';
 import { errorHandler } from './middleware/errorHandler';
 
 dotenv.config();
@@ -38,6 +39,7 @@ app.use('/api/stats', statsRouter);
 app.use('/api/customers', customersRouter);
 app.use('/api/machines', machinesRouter);
 app.use('/api/assistant', assistantRouter);
+app.use('/api/dashboard', dashboardRouter);
 
 // Global error handler (must be after routes)
 app.use(errorHandler);

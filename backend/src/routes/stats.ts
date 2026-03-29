@@ -19,7 +19,8 @@ statsRouter.get('/', asyncHandler(async (_req, res) => {
       r.*,
       COUNT(DISTINCT ss.id)::int AS cell_count,
       COALESCE(SUM(ss.max_volume_m3), 0)::float AS total_capacity,
-      COALESCE(SUM(ss.current_volume_m3), 0)::float AS items_stored,
+      COALESCE(SUM(ss.current_volume_m3), 0)::float AS volume_stored,
+      COALESCE(SUM(ss.current_count), 0)::int AS items_stored_count,
       COUNT(DISTINCT ss.id) FILTER (WHERE ss.current_count > 0)::int AS cells_in_use
     FROM racks r
     LEFT JOIN shelf_slots ss ON ss.rack_id = r.id
@@ -28,25 +29,31 @@ statsRouter.get('/', asyncHandler(async (_req, res) => {
   `);
 
   let totalCapacity = 0;
-  let totalItemsStored = 0;
+  let totalVolumeStored = 0;
   let totalCells = 0;
   let totalCellsInUse = 0;
+  let totalItemCount = 0;
 
   for (const rack of racksResult.rows) {
     totalCapacity += Number(rack.total_capacity);
-    totalItemsStored += Number(rack.items_stored);
+    totalVolumeStored += Number(rack.volume_stored);
     totalCells += Number(rack.cell_count);
     totalCellsInUse += Number(rack.cells_in_use);
+    totalItemCount += Number(rack.items_stored_count ?? 0);
   }
+
+  // Use cell-based occupancy (cells in use / total cells) since volume data is sparse
+  const occupancyPercent = totalCells > 0 ? Math.round((totalCellsInUse / totalCells) * 100) : 0;
 
   res.json({
     data: {
       total_racks: racksResult.rows.length,
       total_slots: totalCells,
+      total_items_stored: totalItemCount,
       total_capacity: totalCapacity,
-      items_stored: totalItemsStored,
+      volume_stored: totalVolumeStored,
       slots_in_use: totalCellsInUse,
-      occupancy_percent: totalCapacity > 0 ? Math.round((totalItemsStored / totalCapacity) * 100) : 0,
+      occupancy_percent: occupancyPercent,
       racks: racksResult.rows,
     },
   });

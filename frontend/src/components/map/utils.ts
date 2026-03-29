@@ -1,3 +1,5 @@
+const STANDARD_MAX_VOLUME = 19.4;
+
 function toNumber(value: number | string | null | undefined) {
   if (value === null || value === undefined) {
     return 0;
@@ -9,7 +11,7 @@ function toNumber(value: number | string | null | undefined) {
 
 export function getOccupancyRatio(used: number | string, total: number | string) {
   const usedValue = toNumber(used);
-  const totalValue = toNumber(total);
+  const totalValue = toNumber(total) || STANDARD_MAX_VOLUME;
 
   if (!totalValue) {
     return 0;
@@ -21,11 +23,15 @@ export function getOccupancyRatio(used: number | string, total: number | string)
 export function getOccupancyState(used: number | string, total: number | string) {
   const ratio = getOccupancyRatio(used, total);
 
-  if (ratio > 0.8) {
+  if (ratio === 0) {
+    return 'empty';
+  }
+
+  if (ratio > 0.85) {
     return 'danger';
   }
 
-  if (ratio >= 0.5) {
+  if (ratio > 0.5) {
     return 'warning';
   }
 
@@ -48,6 +54,14 @@ export function getOccupancyPalette(used: number | string, total: number | strin
       border: '#D97706',
       fill: '#FEF3C7',
       accent: '#B45309',
+    };
+  }
+
+  if (state === 'empty') {
+    return {
+      border: '#D1D5DB',
+      fill: '#F9FAFB',
+      accent: '#6B7280',
     };
   }
 

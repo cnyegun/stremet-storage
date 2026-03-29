@@ -1,6 +1,6 @@
 'use client';
 
-import type { SelectHTMLAttributes } from 'react';
+import { useId, type SelectHTMLAttributes } from 'react';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 
@@ -11,10 +11,15 @@ type SelectProps = SelectHTMLAttributes<HTMLSelectElement> & {
   options: Option[];
 };
 
-export function Select({ label, id, options, value, onChange }: SelectProps) {
+export function Select({ label, id, name, options, value, onChange }: SelectProps) {
+  const autoId = useId();
+  const resolvedId = id || autoId;
+  const resolvedName = name || resolvedId;
+
   return (
     <TextField
-      id={id}
+      id={resolvedId}
+      name={resolvedName}
       label={label}
       value={value ?? ''}
       onChange={onChange as any}

@@ -22,7 +22,7 @@ export function OccupancyBar({ used, total, label, compact = false }: OccupancyB
     <Box>
       <Stack direction="row" justifyContent="space-between" mb={0.25}>
         <Typography variant="caption" color="text.secondary">{label ?? 'Occupancy'}</Typography>
-        <Typography variant="caption" color="text.secondary">{usedValue}/{totalValue}</Typography>
+        <Typography variant="caption" color="text.secondary">{usedValue.toFixed(1)}/{totalValue.toFixed(1)} m³</Typography>
       </Stack>
       <LinearProgress variant="determinate" value={pct} color={color} sx={{ height: compact ? 4 : 6, borderRadius: 2 }} />
     </Box>

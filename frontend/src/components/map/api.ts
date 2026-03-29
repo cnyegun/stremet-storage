@@ -35,6 +35,9 @@ function mapRackFromDetail(rack: RackWithShelves): MapRack {
     max_volume_m3: toNumber(cell.max_volume_m3),
     current_volume_m3: toNumber(cell.current_volume_m3),
     current_count: toNumber(cell.current_count),
+    current_weight_kg: toNumber(cell.current_weight_kg),
+    measured_weight_kg: toNumber(cell.measured_weight_kg),
+    weight_discrepancy_threshold: toNumber(cell.weight_discrepancy_threshold),
     items: mapCellItems(cell.items),
     checkin_href: `/check-in?rack=${encodeURIComponent(rack.id)}&cell=${encodeURIComponent(cell.id)}`,
   }));
@@ -47,8 +50,8 @@ function mapRackFromDetail(rack: RackWithShelves): MapRack {
     rack_type: rack.rack_type,
     row_count: rack.row_count,
     column_count: rack.column_count,
-    occupancy_used: cells.reduce((sum, cell) => sum + cell.current_count, 0),
-    occupancy_total: cells.reduce((sum, cell) => sum + cell.capacity, 0),
+    occupancy_used: cells.reduce((sum, cell) => sum + cell.current_volume_m3, 0),
+    occupancy_total: cells.reduce((sum, cell) => sum + cell.max_volume_m3, 0),
     cells,
   };
 }
@@ -82,17 +85,8 @@ function buildStats(racks: MapRack[]): WarehouseMapData['stats'] {
 }
 
 export async function getWarehouseMapData(): Promise<WarehouseMapData> {
-  const racksResponse = await api.getRacks();
-  const rackDetails = await Promise.all(
-    racksResponse.data.map(async (rack) => {
-      try {
-        const detailResponse = await api.getRack(rack.id);
-        return mapRackFromDetail(detailResponse.data);
-      } catch {
-        return mapRackSummary(rack);
-      }
-    }),
-  );
+  const response = await api.getAllRackDetails();
+  const rackDetails = response.data.map(mapRackFromDetail);
 
   return {
     racks: rackDetails,

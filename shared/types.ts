@@ -49,6 +49,9 @@ export interface ShelfSlot {
   max_volume_m3: number;
   current_volume_m3: number;
   current_count: number;
+  current_weight_kg: number;
+  measured_weight_kg: number;
+  weight_discrepancy_threshold: number;
   created_at: string;
   updated_at: string;
 }
@@ -326,14 +329,14 @@ export interface GlobalSearchLocation {
   rack_code: string;
   rack_label: string;
   rack_type: RackType;
-  volume_stored: number;
+  items_stored: number;
 }
 
 export interface GlobalSearchCustomer {
   id: string;
   name: string;
   code: string;
-  volume_in_storage: number;
+  items_in_storage: number;
 }
 
 export interface GlobalSearchMachine {
@@ -341,7 +344,7 @@ export interface GlobalSearchMachine {
   name: string;
   code: string;
   category: MachineCategory | string;
-  active_volume: number;
+  active_items: number;
 }
 
 export interface GlobalSearchResponse {
@@ -359,6 +362,76 @@ export interface WarehouseStats {
   slots_in_use: number;
   occupancy_percent: number;
   racks: RackWithStats[];
+}
+
+// --- Dashboard ---
+
+export interface DashboardStats {
+  total_racks: number;
+  total_slots: number;
+  total_capacity: number;
+  volume_stored: number;
+  slots_in_use: number;
+  total_items_stored: number;
+  occupancy_percent: number;
+}
+
+export interface DashboardCustomerBreakdown {
+  customer_name: string;
+  customer_code: string;
+  assignment_count: number;
+  total_quantity: number;
+}
+
+export interface DashboardMachine {
+  id: string;
+  code: string;
+  name: string;
+  category: MachineCategory;
+  active_items: number;
+  active_quantity: number;
+  needs_attention: number;
+}
+
+export interface DashboardAging {
+  over_14_days: number;
+  over_30_days: number;
+  over_60_days: number;
+  total_active: number;
+}
+
+export interface DashboardDailyActivity {
+  day: string;
+  check_ins: number;
+  check_outs: number;
+  moves: number;
+  total: number;
+}
+
+export interface DashboardRackOccupancy {
+  code: string;
+  label: string;
+  rack_type: RackType;
+  total_cells: number;
+  used_cells: number;
+  item_count: number;
+}
+
+export interface DashboardMaterialBreakdown {
+  material: string;
+  assignment_count: number;
+  total_quantity: number;
+}
+
+export interface DashboardData {
+  stats: DashboardStats;
+  recent_activity: ActivityLogWithItem[];
+  customer_breakdown: DashboardCustomerBreakdown[];
+  machines: DashboardMachine[];
+  aging: DashboardAging;
+  daily_activity: DashboardDailyActivity[];
+  rack_occupancy: DashboardRackOccupancy[];
+  material_breakdown: DashboardMaterialBreakdown[];
 }
 
 // --- Request Bodies ---

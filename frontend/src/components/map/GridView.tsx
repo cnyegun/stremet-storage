@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
 import Box from '@mui/material/Box';
 import Collapse from '@mui/material/Collapse';
@@ -44,49 +44,89 @@ function groupCellsByRow(rack: MapRack) {
     });
 }
 
+const CellContent = memo(function CellContent({ cell, expanded, onToggle }: { cell: MapCell; expanded: boolean; onToggle: (id: string) => void }) {
+  const currentVol = Number(cell.current_volume_m3) || 0;
+  const maxVol = Number(cell.max_volume_m3) || 19.4;
+  const hasMeasuredVolume = currentVol > 0 || cell.current_count === 0;
+  const occupancyUsed = hasMeasuredVolume ? currentVol : cell.current_count;
+  const occupancyTotal = hasMeasuredVolume ? maxVol : Math.max(cell.capacity, cell.current_count, 1);
+  const percentage = Math.round((occupancyUsed / occupancyTotal) * 100);
+  const palette = getOccupancyPalette(occupancyUsed, occupancyTotal);
+
+  return (
+    <TableCell sx={{ verticalAlign: 'top', bgcolor: 'background.paper', p: 1 }}>
+      <Box
+        onClick={() => onToggle(cell.id)}
+        sx={{ cursor: 'pointer', border: 1, p: 1, borderColor: palette.border, bgcolor: palette.fill, borderRadius: 1 }}
+      >
+        <Typography variant="body2" fontWeight={500}>{cell.current_count === 0 ? 'Empty' : `${cell.current_count} items`}</Typography>
+        <Typography variant="caption" sx={{ mt: 0.5, display: 'block', fontSize: '0.65rem', color: 'text.secondary' }}>
+          {hasMeasuredVolume
+            ? `${currentVol.toFixed(1)} / ${maxVol.toFixed(1)} m³ (${percentage}%)`
+            : `${cell.current_count} / ${Math.max(cell.capacity, cell.current_count)} slots used (${percentage}%)`}
+        </Typography>
+      </Box>
+      <Collapse in={expanded}>
+        <Stack spacing={0.5} mt={1}>
+          {cell.items.length === 0 ? (
+            <Typography variant="caption" color="text.secondary">Empty cell.</Typography>
+          ) : (
+            cell.items.map((item) => (
+              <Link key={item.id} href={item.item_href} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
+                <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 0.5, '&:hover': { bgcolor: 'action.hover' }, borderRadius: 0.5, px: 0.5, mx: -0.5 }}>
+                  <Typography variant="body2" fontWeight={500} color="primary" sx={{ fontSize: '0.75rem' }}>{item.item_code}</Typography>
+                  <Typography variant="caption" display="block">{item.name}</Typography>
+                  <Typography variant="caption" color="text.secondary">{item.customer_name ?? 'General stock'}</Typography>
+                </Box>
+              </Link>
+            ))
+          )}
+        </Stack>
+      </Collapse>
+    </TableCell>
+  );
+});
+
+const RackGrid = memo(function RackGrid({ rack, expandedCellId, onToggleCell }: { rack: MapRack; expandedCellId: string | null; onToggleCell: (id: string) => void }) {
+  const rows = useMemo(() => groupCellsByRow(rack), [rack]);
+
+  return (
+    <TableContainer>
+      <MuiTable size="small" sx={{ tableLayout: 'fixed' }}>
+        <TableHead>
+          <TableRow sx={{ bgcolor: 'grey.100' }}>
+            <TableCell sx={{ width: 80, fontWeight: 700 }}>Row</TableCell>
+            {Array.from({ length: rack.column_count }, (_, i) => (
+              <TableCell key={i} align="center" sx={{ fontWeight: 700 }}>Col {i + 1}</TableCell>
+            ))}
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow key={row.rowNumber}>
+              <TableCell sx={{ fontWeight: 600, bgcolor: 'grey.50' }}>Lvl {row.rowNumber}</TableCell>
+              {row.cells.map((cell) => (
+                <CellContent key={cell.id} cell={cell} expanded={expandedCellId === cell.id} onToggle={onToggleCell} />
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </MuiTable>
+    </TableContainer>
+  );
+});
+
 export function GridView({ racks }: GridViewProps) {
-  const [expandedRackIds, setExpandedRackIds] = useState<string[]>(racks.map((rack) => rack.id));
+  const [expandedRackIds, setExpandedRackIds] = useState<string[]>([]);
   const [expandedCellId, setExpandedCellId] = useState<string | null>(null);
 
-  function toggleRack(rackId: string) {
+  const toggleRack = useCallback((rackId: string) => {
     setExpandedRackIds((current) => (current.includes(rackId) ? current.filter((id) => id !== rackId) : [...current, rackId]));
-  }
+  }, []);
 
-  function renderCell(cell: MapCell) {
-    const expanded = expandedCellId === cell.id;
-    const palette = getOccupancyPalette(cell.current_count, cell.capacity);
-
-    return (
-      <TableCell key={cell.id} sx={{ verticalAlign: 'top', bgcolor: 'background.paper', p: 1 }}>
-        <Box
-          onClick={() => setExpandedCellId((current) => (current === cell.id ? null : cell.id))}
-          sx={{ cursor: 'pointer', border: 1, p: 1, borderColor: palette.border, bgcolor: palette.fill, borderRadius: 1 }}
-        >
-          <Typography variant="body2" fontWeight={500}>{cell.current_count === 0 ? 'Empty' : `${cell.current_count} items`}</Typography>
-          <Typography variant="caption" sx={{ mt: 0.5, display: 'block', fontSize: '0.65rem', color: 'text.secondary' }}>
-            {cell.current_count}/{cell.capacity}
-          </Typography>
-        </Box>
-        <Collapse in={expanded}>
-          <Stack spacing={0.5} mt={1}>
-            {cell.items.length === 0 ? (
-              <Typography variant="caption" color="text.secondary">Empty cell.</Typography>
-            ) : (
-              cell.items.map((item) => (
-                <Link key={item.id} href={item.item_href} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
-                  <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 0.5, '&:hover': { bgcolor: 'action.hover' }, borderRadius: 0.5, px: 0.5, mx: -0.5 }}>
-                    <Typography variant="body2" fontWeight={500} color="primary" sx={{ fontSize: '0.75rem' }}>{item.item_code}</Typography>
-                    <Typography variant="caption" display="block">{item.name}</Typography>
-                    <Typography variant="caption" color="text.secondary">{item.customer_name ?? 'General stock'}</Typography>
-                  </Box>
-                </Link>
-              ))
-            )}
-          </Stack>
-        </Collapse>
-      </TableCell>
-    );
-  }
+  const toggleCell = useCallback((cellId: string) => {
+    setExpandedCellId((current) => (current === cellId ? null : cellId));
+  }, []);
 
   if (racks.length === 0) {
     return <EmptyState title="No racks available" description="Storage racks are not available yet." />;
@@ -96,7 +136,6 @@ export function GridView({ racks }: GridViewProps) {
     <Stack spacing={2}>
       {racks.map((rack) => {
         const expanded = expandedRackIds.includes(rack.id);
-        const rows = groupCellsByRow(rack);
 
         return (
           <Paper key={rack.id} variant="outlined">
@@ -113,27 +152,8 @@ export function GridView({ racks }: GridViewProps) {
                 <OccupancyBar used={rack.occupancy_used} total={rack.occupancy_total} label="Rack occupancy" />
               </Box>
             </Box>
-            <Collapse in={expanded}>
-              <TableContainer>
-                <MuiTable size="small" sx={{ tableLayout: 'fixed' }}>
-                  <TableHead>
-                    <TableRow sx={{ bgcolor: 'grey.100' }}>
-                      <TableCell sx={{ width: 80, fontWeight: 700 }}>Row</TableCell>
-                      {Array.from({ length: 10 }, (_, i) => (
-                        <TableCell key={i} align="center" sx={{ fontWeight: 700 }}>Col {i + 1}</TableCell>
-                      ))}
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {rows.map((row) => (
-                      <TableRow key={row.rowNumber}>
-                        <TableCell sx={{ fontWeight: 600, bgcolor: 'grey.50' }}>Lvl {row.rowNumber}</TableCell>
-                        {row.cells.map(renderCell)}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </MuiTable>
-              </TableContainer>
+            <Collapse in={expanded} unmountOnExit>
+              <RackGrid rack={rack} expandedCellId={expandedCellId} onToggleCell={toggleCell} />
             </Collapse>
           </Paper>
         );

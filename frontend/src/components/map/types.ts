@@ -19,6 +19,9 @@ export interface MapCell {
   max_volume_m3: number;
   current_volume_m3: number;
   current_count: number;
+  current_weight_kg?: number;
+  measured_weight_kg?: number;
+  weight_discrepancy_threshold?: number;
   items: MapItem[];
   checkin_href: string;
 }

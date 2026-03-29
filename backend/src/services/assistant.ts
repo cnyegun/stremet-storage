@@ -17,13 +17,9 @@ After I give you the query results, summarize them in a clear, readable way.
 
 DATABASE SCHEMA:
 
--- zones: Physical areas of the 1000m2 factory floor
--- Codes: A (raw materials), B (work-in-progress), C (finished goods), D (customer orders), E (general stock)
-zones(id UUID PK, name, code UNIQUE, description, color, position_x, position_y, width, height)
-
--- racks: Shelving units within zones. ~5 racks per zone.
+-- racks: Shelving units in the warehouse. 25 racks total.
 -- rack_type: raw_materials | work_in_progress | finished_goods | customer_orders | general_stock
-racks(id UUID PK, zone_id FK->zones, code UNIQUE e.g. "A-R1", label, rack_type, row_count, column_count, display_order, position_in_zone, total_shelves)
+racks(id UUID PK, code UNIQUE e.g. "A-R1", label, rack_type, row_count, column_count, display_order, position_in_zone, total_shelves)
 
 -- shelf_slots: Individual cells within racks. Addressed as rack_code/R{row}C{col}.
 shelf_slots(id UUID PK, rack_id FK->racks, shelf_number, row_number, column_number, capacity, current_count)
@@ -49,10 +45,10 @@ machine_assignments(id UUID PK, item_id FK->items, machine_id FK->machines, unit
 activity_log(id UUID PK, item_id FK->items, action [check_in|check_out|move|note_added], tracking_unit_code nullable, machine_id FK nullable, from_location, to_location, performed_by, notes, created_at)
 
 KEY QUERY PATTERNS:
-- Find where an item is stored: JOIN storage_assignments (WHERE checked_out_at IS NULL) -> shelf_slots -> racks -> zones
-- Zone occupancy: SUM(current_count) / SUM(capacity) from shelf_slots JOIN racks WHERE zone_id = ...
+- Find where an item is stored: JOIN storage_assignments (WHERE checked_out_at IS NULL) -> shelf_slots -> racks
+- Rack occupancy: COUNT cells WHERE current_count > 0 from shelf_slots JOIN racks
 - Items checked in today: storage_assignments WHERE checked_in_at >= CURRENT_DATE
-- Available space: shelf_slots WHERE capacity - current_count >= N
+- Available space: shelf_slots WHERE current_count = 0
 - Customer items: JOIN items ON customer_id -> customers WHERE code/name ILIKE ...
 - Use ILIKE for text search (handles Finnish characters like ä, ö)
 - Today's date: CURRENT_DATE

@@ -1,6 +1,6 @@
 'use client';
 
-import type { InputHTMLAttributes } from 'react';
+import { useId, type InputHTMLAttributes } from 'react';
 import TextField from '@mui/material/TextField';
 
 type InputProps = InputHTMLAttributes<HTMLInputElement> & {
@@ -8,10 +8,15 @@ type InputProps = InputHTMLAttributes<HTMLInputElement> & {
   error?: string | null;
 };
 
-export function Input({ label, error, id, value, onChange, type, placeholder, min, max, disabled }: InputProps) {
+export function Input({ label, error, id, name, value, onChange, type, placeholder, min, max, disabled }: InputProps) {
+  const autoId = useId();
+  const resolvedId = id || autoId;
+  const resolvedName = name || resolvedId;
+
   return (
     <TextField
-      id={id}
+      id={resolvedId}
+      name={resolvedName}
       label={label}
       value={value}
       onChange={onChange as any}

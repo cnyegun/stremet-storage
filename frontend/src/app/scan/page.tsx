@@ -199,7 +199,7 @@ export default function ScanPage() {
   };
 
   // Select a rack cell — need to pick a specific shelf slot
-  const [rackCells, setRackCells] = useState<{ id: string; row_number: number; column_number: number; capacity: number; current_count: number }[]>([]);
+  const [rackCells, setRackCells] = useState<{ id: string; row_number: number; column_number: number; max_volume_m3: number; current_volume_m3: number }[]>([]);
   const [selectedRackCode, setSelectedRackCode] = useState('');
 
   const handlePickRack = async (rackId: string, rackCode: string) => {
@@ -208,8 +208,14 @@ export default function ScanPage() {
       const rackDetail = await api.getRack(rackId);
       setRackCells(
         rackDetail.data.shelves
-          .filter((s) => Number(s.current_count) < Number(s.capacity || 0))
-          .map((s) => ({ id: s.id, row_number: s.row_number, column_number: s.column_number, capacity: Number(s.capacity) || 0, current_count: Number(s.current_count) || 0 }))
+          .filter((s) => Number(s.current_volume_m3) < Number(s.max_volume_m3 || 0))
+          .map((s) => ({
+            id: s.id,
+            row_number: s.row_number,
+            column_number: s.column_number,
+            max_volume_m3: Number(s.max_volume_m3) || 0,
+            current_volume_m3: Number(s.current_volume_m3) || 0,
+          }))
           );
     } catch {
       setRackCells([]);
@@ -450,7 +456,7 @@ export default function ScanPage() {
                   <ListItemButton key={cell.id} onClick={() => handlePickCell(cell.id, cell.row_number, cell.column_number)} sx={{ py: 1.5 }}>
                     <ListItemText
                       primary={<Typography sx={{ fontSize: 14, fontWeight: 500 }}>R{cell.row_number}C{cell.column_number}</Typography>}
-                      secondary={<Typography sx={{ fontSize: 11 }}>{cell.current_count}/{cell.capacity} used</Typography>}
+                      secondary={<Typography sx={{ fontSize: 11 }}>{cell.current_volume_m3.toFixed(1)}/{cell.max_volume_m3.toFixed(1)} m³ used</Typography>}
                     />
                   </ListItemButton>
                 ))}

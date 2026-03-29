@@ -9,6 +9,7 @@ import type {
   CheckOutRequest,
   CreateItemRequest,
   Customer,
+  DashboardData,
   DuplicateWarning,
   GlobalSearchResponse,
   ItemDetail,
@@ -111,6 +112,8 @@ export const api = {
 
   getRack: (id: string) => request<ApiResponse<RackWithShelves>>(`/racks/${id}`),
 
+  getAllRackDetails: () => request<ApiResponse<RackWithShelves[]>>('/racks/all-details'),
+
   getCustomers: () => request<ApiResponse<Customer[]>>('/customers'),
 
   getMachines: () => request<ApiResponse<MachineWithItemCount[]>>('/machines'),
@@ -122,6 +125,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  getDashboard: () => request<ApiResponse<DashboardData>>('/dashboard'),
 
   getStats: () => request<ApiResponse<WarehouseStats>>('/stats'),
 
