@@ -61,9 +61,7 @@ const CellContent = memo(function CellContent({ cell, expanded, onToggle }: { ce
       >
         <Typography variant="body2" fontWeight={500}>{cell.current_count === 0 ? 'Empty' : `${cell.current_count} items`}</Typography>
         <Typography variant="caption" sx={{ mt: 0.5, display: 'block', fontSize: '0.65rem', color: 'text.secondary' }}>
-          {hasMeasuredVolume
-            ? `${currentVol.toFixed(1)} / ${maxVol.toFixed(1)} m³ (${percentage}%)`
-            : `${cell.current_count} / ${Math.max(cell.capacity, cell.current_count)} slots used (${percentage}%)`}
+          {currentVol.toFixed(1)} / {maxVol.toFixed(1)} m³ ({percentage}%)
         </Typography>
       </Box>
       <Collapse in={expanded}>

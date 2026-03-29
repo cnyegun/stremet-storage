@@ -113,14 +113,20 @@ export default function RackDetailPage() {
                 <TableRow key={row.rowNumber}>
                   <TableCell sx={{ fontWeight: 600, bgcolor: 'grey.50' }}>Lvl {row.rowNumber}</TableCell>
                   {row.cells.map((cell) => {
-                    const palette = getOccupancyPalette(cell.current_count, cell.capacity);
+                    const currentVol = Number(cell.current_volume_m3) || 0;
+                    const maxVol = Number(cell.max_volume_m3) || 19.4;
+                    const hasMeasuredVolume = currentVol > 0 || cell.current_count === 0;
+                    const occupancyUsed = hasMeasuredVolume ? currentVol : cell.current_count;
+                    const occupancyTotal = hasMeasuredVolume ? maxVol : Math.max(cell.capacity, cell.current_count, 1);
+                    const percentage = Math.round((occupancyUsed / occupancyTotal) * 100);
+                    const palette = getOccupancyPalette(occupancyUsed, occupancyTotal);
 
                     return (
                       <TableCell key={cell.id} sx={{ verticalAlign: 'top', p: 1 }}>
                         <Box sx={{ border: 1, borderColor: palette.border, bgcolor: palette.fill, p: 1, borderRadius: 1, minHeight: 80 }}>
                           <Typography variant="body2" fontWeight={500}>{cell.current_count === 0 ? 'Empty' : `${cell.current_count} items`}</Typography>
                           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, fontSize: '0.65rem' }}>
-                            {cell.current_count}/{cell.capacity}
+                            {currentVol.toFixed(1)} / {maxVol.toFixed(1)} m³ ({percentage}%)
                           </Typography>
                           <Stack spacing={0.25} mt={1}>
                             {cell.items.map((item) => (
