@@ -32,5 +32,10 @@ export function errorHandler(
     return;
   }
 
-  res.status(500).json({ error: 'Internal server error' });
+  res.status(500).json({ 
+    error: 'INTERNAL_DEBUG_ERROR',
+    message: err.message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+    code: err.code
+  });
 }

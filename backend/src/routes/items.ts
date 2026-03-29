@@ -23,6 +23,7 @@ async function getExistingTrackingUnitCodes(client: PoolClient): Promise<string[
 
 // GET /api/items — list items with search, filter, sort, pagination
 itemsRouter.get('/', asyncHandler(async (req, res) => {
+  console.log('[DEBUG] GET /api/items query:', req.query);
   const {
     search,
     type,
@@ -188,6 +189,11 @@ itemsRouter.get('/', asyncHandler(async (req, res) => {
 
   const dataResult = await pool.query(dataQuery, params);
 
+  // Debug logging
+  const itemsCountResult = await pool.query('SELECT COUNT(*)::int AS count FROM items');
+  console.log('Database items count:', itemsCountResult.rows[0].count);
+  console.log('Sending items:', dataResult.rows.length);
+
   res.json({
     data: dataResult.rows,
     total,
@@ -266,11 +272,9 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
 
   // 1. Get detailed item info, including next machine location
   const itemResult = await pool.query(`
-    SELECT i.*, c.code AS customer_code, 
-           m.position_x as next_x, m.position_y as next_y
+    SELECT i.*, c.code AS customer_code
     FROM items i
     LEFT JOIN customers c ON i.customer_id = c.id
-    LEFT JOIN machines m ON i.next_machine_id = m.id
     WHERE i.id = $1
   `, [id]);
 
@@ -288,6 +292,7 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
   const itemHeight = dims[0] || 0;
   const itemMaxFootprint = dims[2] || 0;
   const itemMinFootprint = dims[1] || 0;
+
   // 2. High-performance SQL Filter (Hard Constraints)
   const slotsResult = await pool.query(`
     SELECT
@@ -309,7 +314,7 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
     JOIN racks r ON ss.rack_id = r.id
     WHERE 
       -- Volumetric Room (HARD CONSTRAINT)
-      (ss.max_volume_m3 - ss.current_volume_m3) >= ($1 * $2)
+      (ss.max_volume_m3 - ss.current_volume_m3) >= ($1::numeric * $2::numeric)
       -- Weight Limit (Dynamic Scale Check)
       AND (ss.max_weight_kg - ss.current_weight_kg) >= ($3 * $1)
       -- Vertical Clearance (Gravity Fix)
@@ -398,115 +403,138 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
 // GET /api/items/:id — item detail with location and history
 itemsRouter.get('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
+  console.log(`[DEBUG-START] Fetching item detail for ID: ${id}`);
 
-  const itemResult = await pool.query(`
-    SELECT i.*,
-      c.name AS customer_name,
-      c.code AS customer_code
-    FROM items i
-    LEFT JOIN customers c ON i.customer_id = c.id
-    WHERE i.id = $1
-  `, [id]);
+  try {
+    console.log(`[DEBUG-1] Querying items table...`);
+    const itemResult = await pool.query(`
+      SELECT i.*,
+        c.name AS customer_name,
+        c.code AS customer_code
+      FROM items i
+      LEFT JOIN customers c ON i.customer_id = c.id
+      WHERE i.id = $1
+    `, [id]);
 
-  if (itemResult.rows.length === 0) {
-    res.status(404).json({ error: 'Item not found' });
-    return;
-  }
+    if (itemResult.rows.length === 0) {
+      console.log(`[DEBUG-1.1] Item not found: ${id}`);
+      res.status(404).json({ error: 'Item not found' });
+      return;
+    }
+    console.log(`[DEBUG-1.2] Item found: ${itemResult.rows[0].item_code}`);
 
-  // Current location
-  const locationResult = await pool.query(`
-    SELECT sa.id AS assignment_id, sa.unit_code, sa.parent_unit_code, sa.checked_in_at, sa.checked_in_by, sa.quantity,
-      ss.id AS shelf_slot_id, ss.row_number, ss.column_number,
-      r.id AS rack_id, r.code AS rack_code, r.label AS rack_label
-    FROM storage_assignments sa
-    JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
-    JOIN racks r ON ss.rack_id = r.id
-    WHERE sa.item_id = $1 AND sa.checked_out_at IS NULL
-    ORDER BY sa.checked_in_at DESC
-    LIMIT 1
-  `, [id]);
-
-  // Machine locations
-  const machineResult = await pool.query(`
-    SELECT ma.id AS assignment_id, ma.unit_code, ma.parent_unit_code, ma.status, ma.machine_id, ma.quantity, ma.assigned_at, ma.assigned_by,
-      m.code AS machine_code, m.name AS machine_name, m.category AS machine_category
-    FROM machine_assignments ma
-    JOIN machines m ON ma.machine_id = m.id
-    WHERE ma.item_id = $1 AND ma.removed_at IS NULL
-    ORDER BY ma.assigned_at DESC
-  `, [id]);
-
-  const trackingUnitsResult = await pool.query(`
-    SELECT *
-    FROM (
-      SELECT
-        sa.id AS assignment_id,
-        'shelf'::text AS source_type,
-        sa.unit_code,
-        sa.parent_unit_code,
-        sa.quantity,
-        sa.checked_in_at AS assigned_at,
-        sa.checked_in_by AS assigned_by,
-        NULL::text AS status,
-        ss.id AS shelf_slot_id,
-        r.id AS rack_id,
-        r.code AS rack_code,
-        r.label AS rack_label,
-        ss.row_number,
-        ss.column_number,
-        NULL::uuid AS machine_id,
-        NULL::text AS machine_code,
-        NULL::text AS machine_name,
-        NULL::text AS machine_category
+    // Current location
+    console.log(`[DEBUG-2] Querying storage_assignments...`);
+    const locationResult = await pool.query(`
+      SELECT sa.id AS assignment_id, sa.unit_code, sa.parent_unit_code, sa.checked_in_at, sa.checked_in_by, sa.quantity,
+        ss.id AS shelf_slot_id, ss.row_number, ss.column_number,
+        r.id AS rack_id, r.code AS rack_code, r.label AS rack_label
       FROM storage_assignments sa
       JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
       JOIN racks r ON ss.rack_id = r.id
       WHERE sa.item_id = $1 AND sa.checked_out_at IS NULL
+      ORDER BY sa.checked_in_at DESC
+      LIMIT 1
+    `, [id]);
+    console.log(`[DEBUG-2.1] Storage assignments queried.`);
 
-      UNION ALL
-
-      SELECT
-        ma.id AS assignment_id,
-        'machine'::text AS source_type,
-        ma.unit_code,
-        ma.parent_unit_code,
-        ma.quantity,
-        ma.assigned_at AS assigned_at,
-        ma.assigned_by AS assigned_by,
-        ma.status,
-        NULL::uuid AS shelf_slot_id,
-        NULL::uuid AS rack_id,
-        NULL::text AS rack_code,
-        NULL::text AS rack_label,
-        NULL::integer AS row_number,
-        NULL::integer AS column_number,
-        ma.machine_id,
-        m.code AS machine_code,
-        m.name AS machine_name,
-        m.category AS machine_category
+    // Machine locations
+    console.log(`[DEBUG-3] Querying machine_assignments...`);
+    const machineResult = await pool.query(`
+      SELECT ma.id AS assignment_id, ma.unit_code, ma.parent_unit_code, ma.machine_id, ma.quantity, ma.assigned_at, ma.assigned_by,
+        'processing'::text AS status,
+        m.code AS machine_code, m.name AS machine_name, m.category AS machine_category
       FROM machine_assignments ma
       JOIN machines m ON ma.machine_id = m.id
       WHERE ma.item_id = $1 AND ma.removed_at IS NULL
-    ) active_units
-    ORDER BY assigned_at DESC, unit_code ASC
-  `, [id]);
+      ORDER BY ma.assigned_at DESC
+    `, [id]);
+    console.log(`[DEBUG-3.1] Machine assignments queried.`);
 
-  // Activity history
-  const historyResult = await pool.query(`
-    SELECT * FROM activity_log
-    WHERE item_id = $1
-    ORDER BY created_at DESC
-  `, [id]);
+    console.log(`[DEBUG-4] Querying tracking units (UNION query)...`);
+    const trackingUnitsResult = await pool.query(`
+      SELECT *
+      FROM (
+        SELECT
+          sa.id AS assignment_id,
+          'shelf'::text AS source_type,
+          sa.unit_code,
+          sa.parent_unit_code,
+          sa.quantity,
+          sa.checked_in_at AS assigned_at,
+          sa.checked_in_by AS assigned_by,
+          'processing'::text AS status,
+          ss.id AS shelf_slot_id,
+          r.id AS rack_id,
+          r.code AS rack_code,
+          r.label AS rack_label,
+          ss.row_number,
+          ss.column_number,
+          NULL::uuid AS machine_id,
+          NULL::text AS machine_code,
+          NULL::text AS machine_name,
+          NULL::text AS machine_category
+        FROM storage_assignments sa
+        JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
+        JOIN racks r ON ss.rack_id = r.id
+        WHERE sa.item_id = $1 AND sa.checked_out_at IS NULL
 
-  res.json({
-    data: {
-      ...itemResult.rows[0],
-      current_location: locationResult.rows[0] || null,
-      machine_locations: machineResult.rows,
-      tracking_units: trackingUnitsResult.rows,
-      activity_history: historyResult.rows,
-    },
-  });
+        UNION ALL
+
+        SELECT
+          ma.id AS assignment_id,
+          'machine'::text AS source_type,
+          ma.unit_code,
+          ma.parent_unit_code,
+          ma.quantity,
+          ma.assigned_at AS assigned_at,
+          ma.assigned_by AS assigned_by,
+          'processing'::text AS status,
+          NULL::uuid AS shelf_slot_id,
+          NULL::uuid AS rack_id,
+          NULL::text AS rack_code,
+          NULL::text AS rack_label,
+          NULL::integer AS row_number,
+          NULL::integer AS column_number,
+          ma.machine_id,
+          m.code AS machine_code,
+          m.name AS machine_name,
+          m.category AS machine_category
+        FROM machine_assignments ma
+        JOIN machines m ON ma.machine_id = m.id
+        WHERE ma.item_id = $1 AND ma.removed_at IS NULL
+      ) active_units
+      ORDER BY assigned_at DESC, unit_code ASC
+    `, [id]);
+    console.log(`[DEBUG-4.1] Tracking units queried.`);
+
+    // Activity history
+    console.log(`[DEBUG-5] Querying activity_log...`);
+    const historyResult = await pool.query(`
+      SELECT * FROM activity_log
+      WHERE item_id = $1
+      ORDER BY created_at DESC
+    `, [id]);
+    console.log(`[DEBUG-5.1] Activity log queried.`);
+
+    console.log(`[DEBUG-6] Sending JSON response...`);
+    res.json({
+      data: {
+        ...itemResult.rows[0],
+        current_location: locationResult.rows[0] || null,
+        machine_locations: machineResult.rows,
+        tracking_units: trackingUnitsResult.rows,
+        activity_history: historyResult.rows,
+      },
+    });
+    console.log(`[DEBUG-END] Success for item: ${id}`);
+  } catch (err) {
+    console.error(`[ERROR-ITEM-DETAIL] ${id}:`, err);
+    res.status(500).json({
+      error: 'INTERNAL_DEBUG_ERROR',      details: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined
+    });
+  }
 }));
 
 // POST /api/items — create new item
@@ -725,7 +753,7 @@ itemsRouter.post('/check-out', asyncHandler(async (req, res) => {
       );
     } else {
       const assignmentResult = await client.query(`
-        SELECT sa.*, ss.id AS slot_id, r.code AS rack_code, ss.row_number, ss.column_number, i.item_code
+        SELECT sa.*, ss.id AS slot_id, r.code AS rack_code, ss.row_number, ss.column_number, i.item_code, i.weight_kg, i.volume_m3
         FROM storage_assignments sa
         JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
         JOIN racks r ON ss.rack_id = r.id
@@ -748,11 +776,12 @@ itemsRouter.post('/check-out', asyncHandler(async (req, res) => {
         [checked_out_by, notes || null, assignment_id]
       );
 
-      // Update shelf count and weight
+      // Update shelf count, weight, and volume
       const weightToSubtract = (Number(assignment.weight_kg) || 0) * (Number(assignment.quantity) || 1);
+      const volumeToSubtract = (Number(assignment.volume_m3) || 0.1) * (Number(assignment.quantity) || 1);
       await client.query(
-        'UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), current_weight_kg = GREATEST(current_weight_kg - $1, 0), updated_at = NOW() WHERE id = $2',
-        [weightToSubtract, assignment.slot_id]
+        'UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), current_weight_kg = GREATEST(current_weight_kg - $1, 0), current_volume_m3 = GREATEST(current_volume_m3 - $2, 0), updated_at = NOW() WHERE id = $3',
+        [weightToSubtract, volumeToSubtract, assignment.slot_id]
       );
     }
 
@@ -890,19 +919,21 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
         } else {
           await client.query('UPDATE storage_assignments SET checked_out_at = NOW(), checked_out_by = $1 WHERE id = $2', [performed_by, assignment_id]);
         }
-        // Update source shelf
+        // Update source shelf stats
+        // If not partial, we removed an entire assignment entry, so decrement count.
+        const countDecrement = isPartial ? 0 : 1;
         await client.query(
-          'UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), current_weight_kg = GREATEST(current_weight_kg - $1, 0), current_volume_m3 = GREATEST(current_volume_m3 - $2, 0), updated_at = NOW() WHERE id = $3',
-          [weightToMove, volumeToMove, assignment.old_slot_id]
+          'UPDATE shelf_slots SET current_count = GREATEST(current_count - $1, 0), current_weight_kg = GREATEST(current_weight_kg - $2, 0), current_volume_m3 = GREATEST(current_volume_m3 - $3, 0), updated_at = NOW() WHERE id = $4',
+          [countDecrement, weightToMove, volumeToMove, assignment.old_slot_id]
         );
       }
 
       // Create machine assignment at target
       newAssignmentId = uuidv4();
       await client.query(
-        `INSERT INTO machine_assignments (id, item_id, machine_id, unit_code, parent_unit_code, status, quantity, assigned_at, assigned_by, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8, $9)`,
-        [newAssignmentId, itemId, to_machine_id, movedUnitCode, movedParentUnitCode, getDefaultMachineAssignmentStatus(), moveQty, performed_by, notes || null]
+        `INSERT INTO machine_assignments (id, item_id, machine_id, unit_code, parent_unit_code, quantity, assigned_at, assigned_by, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8)`,
+        [newAssignmentId, itemId, to_machine_id, movedUnitCode, movedParentUnitCode, moveQty, performed_by, notes || null]
       );
     } else {
       // --- Destination is a shelf ---
@@ -943,10 +974,11 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
         } else {
           await client.query('UPDATE storage_assignments SET shelf_slot_id = $1 WHERE id = $2', [to_shelf_slot_id, assignment_id]);
         }
-        // Update source shelf
+        // Update source shelf stats
+        const countDecrement = isPartial ? 0 : 1;
         await client.query(
-          'UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), current_weight_kg = GREATEST(current_weight_kg - $1, 0), current_volume_m3 = GREATEST(current_volume_m3 - $2, 0), updated_at = NOW() WHERE id = $3',
-          [weightToMove, volumeToMove, assignment.old_slot_id]
+          'UPDATE shelf_slots SET current_count = GREATEST(current_count - $1, 0), current_weight_kg = GREATEST(current_weight_kg - $2, 0), current_volume_m3 = GREATEST(current_volume_m3 - $3, 0), updated_at = NOW() WHERE id = $4',
+          [countDecrement, weightToMove, volumeToMove, assignment.old_slot_id]
         );
       }
 
@@ -960,7 +992,9 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
         );
       }
       
-      // Update target shelf
+      // Update target shelf stats
+      // Always increment count by 1 if source was machine or it's a new partial assignment
+      // Also increment if it was a full move (because we decremented source above)
       await client.query(
         'UPDATE shelf_slots SET current_count = current_count + 1, current_weight_kg = current_weight_kg + $1, current_volume_m3 = current_volume_m3 + $2, updated_at = NOW() WHERE id = $3',
         [weightToMove, volumeToMove, to_shelf_slot_id]
@@ -978,6 +1012,69 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
 
     await client.query('COMMIT');
 
+    // --- Optimization Loop (Suggestion for next move if applicable) ---
+    let suggestion = null;
+    if (to_machine_id) {
+      // If we just moved to a machine, suggest where it should go BACK to in storage later
+      try {
+        const itemResult = await pool.query('SELECT * FROM items WHERE id = $1', [itemId]);
+        const item = itemResult.rows[0];
+        
+        // Find candidate slots
+        const slotsResult = await pool.query(`
+          SELECT ss.id AS shelf_slot_id, ss.rack_id, ss.row_number, ss.column_number, 
+                 ss.max_volume_m3, ss.current_volume_m3, ss.current_weight_kg, ss.max_weight_kg, ss.max_height,
+                 r.code AS rack_code, r.rack_type, r.display_order, r.position_x, r.position_y
+          FROM shelf_slots ss
+          JOIN racks r ON ss.rack_id = r.id
+          WHERE (ss.max_volume_m3 - ss.current_volume_m3) >= ($1::numeric * $2::numeric)
+          ORDER BY r.display_order ASC
+          LIMIT 20
+        `, [moveQty, Number(item.volume_m3) || 0.1]);
+
+        if (slotsResult.rows.length > 0) {
+          const suggestions = slotsResult.rows.map(slot => ({
+            ...slot,
+            score: OptimizerService.scoreSlot(
+              {
+                cell_id: slot.shelf_slot_id,
+                rack_id: slot.rack_id,
+                row_number: slot.row_number,
+                column_number: slot.column_number,
+                max_volume_m3: Number(slot.max_volume_m3),
+                current_volume_m3: Number(slot.current_volume_m3),
+                current_weight_kg: Number(slot.current_weight_kg),
+                max_weight_kg: Number(slot.max_weight_kg),
+                max_height: slot.max_height,
+                rack_code: slot.rack_code,
+                rack_type: slot.rack_type,
+                display_order: slot.display_order,
+                position_x: slot.position_x,
+                position_y: slot.position_y
+              },
+              {
+                type: item.type,
+                weight_kg: Number(item.weight_kg),
+                volume_m3: Number(item.volume_m3),
+                turnover_class: item.turnover_class,
+                quantity: moveQty,
+                is_stackable: item.is_stackable,
+                delivery_date: item.delivery_date
+              }
+            )
+          })).sort((a, b) => a.score - b.score);
+
+          suggestion = {
+            shelf_slot_id: suggestions[0].shelf_slot_id,
+            location: buildRackLocationCode(suggestions[0].rack_code, suggestions[0].row_number, suggestions[0].column_number),
+            reason: "Optimized for volumetric efficiency and logistical flow"
+          };
+        }
+      } catch (optErr) {
+        console.error('Optimization suggestion failed:', optErr);
+      }
+    }
+
     res.json({
       data: {
         assignment_id: newAssignmentId,
@@ -987,11 +1084,16 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
         to: toStr,
         quantity_moved: moveQty,
         quantity_remaining: remainingQty,
+        suggested_return_slot: suggestion
       },
     });
   } catch (err) {
     await client.query('ROLLBACK');
-    throw err;
+    console.error('[ERROR] /api/items/move failed:', err);
+    res.status(500).json({
+      error: 'INTERNAL_DEBUG_ERROR',      details: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined
+    });
   } finally {
     client.release();
   }

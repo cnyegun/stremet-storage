@@ -54,7 +54,11 @@ export function GridView({ racks }: GridViewProps) {
 
   function renderCell(cell: MapCell) {
     const expanded = expandedCellId === cell.id;
-    const palette = getOccupancyPalette(cell.current_count, cell.capacity);
+    const standardMax = 19.4;
+    const currentVol = cell.current_volume_m3 || 0;
+    const ratio = currentVol / standardMax;
+    const percentage = Math.round(ratio * 100);
+    const palette = getOccupancyPalette(currentVol, standardMax);
 
     return (
       <TableCell key={cell.id} sx={{ verticalAlign: 'top', bgcolor: 'background.paper', p: 1 }}>
@@ -63,8 +67,8 @@ export function GridView({ racks }: GridViewProps) {
           sx={{ cursor: 'pointer', border: 1, p: 1, borderColor: palette.border, bgcolor: palette.fill, borderRadius: 1 }}
         >
           <Typography variant="body2" fontWeight={500}>{cell.current_count === 0 ? 'Empty' : `${cell.current_count} items`}</Typography>
-          <Typography variant="caption" sx={{ mt: 0.5, display: 'block', fontSize: '0.65rem', color: 'text.secondary' }}>
-            {cell.current_count}/{cell.capacity}
+          <Typography variant="caption" sx={{ mt: 0.5, display: 'block', fontSize: '0.65rem', color: 'text.secondary', fontWeight: 600 }}>
+            {currentVol.toFixed(1)} / {standardMax} ({percentage}%)
           </Typography>
         </Box>
         <Collapse in={expanded}>

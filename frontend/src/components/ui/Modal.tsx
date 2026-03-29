@@ -20,7 +20,7 @@ type ModalProps = {
 
 export function Modal({ open, title, children, confirmLabel, confirmDisabled = false, cancelLabel = 'Cancel', onConfirm, onClose }: ModalProps) {
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth disableEnforceFocus disableAutoFocus>
       <DialogTitle>{title}</DialogTitle>
       <DialogContent dividers>{children}</DialogContent>
       <DialogActions>

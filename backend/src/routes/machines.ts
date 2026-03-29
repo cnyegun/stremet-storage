@@ -40,7 +40,8 @@ machinesRouter.get('/:id', asyncHandler(async (req, res) => {
   const machine = machineResult.rows[0];
 
   const itemsResult = await pool.query(`
-    SELECT ma.id AS assignment_id, ma.unit_code, ma.parent_unit_code, ma.status, ma.quantity, ma.assigned_at, ma.assigned_by, ma.notes,
+    SELECT ma.id AS assignment_id, ma.unit_code, ma.parent_unit_code, ma.quantity, ma.assigned_at, ma.assigned_by, ma.notes,
+      'processing'::text AS status,
       i.id AS item_id, i.item_code, i.name AS item_name, i.material, i.dimensions, i.weight_kg,
       c.name AS customer_name
     FROM machine_assignments ma
@@ -117,26 +118,12 @@ machinesRouter.post('/:id/assignments/:assignmentId/status', asyncHandler(async 
     }
 
     const assignment = assignmentResult.rows[0];
-    const previousStatus = assignment.status as string;
-
-    if (previousStatus === nextStatus && !notes) {
-      res.json({
-        data: {
-          assignment_id: assignmentId,
-          unit_code: assignment.unit_code,
-          status: nextStatus,
-        },
-      });
-      await client.query('COMMIT');
-      return;
-    }
 
     await client.query(
       `UPDATE machine_assignments
-       SET status = $1,
-           notes = CASE WHEN $2::text IS NULL OR $2::text = '' THEN notes ELSE $2 END
-       WHERE id = $3`,
-      [nextStatus, notes || null, assignmentId],
+       SET notes = CASE WHEN $1::text IS NULL OR $1::text = '' THEN notes ELSE $1 END
+       WHERE id = $2`,
+      [notes || null, assignmentId],
     );
 
     await client.query(
@@ -148,7 +135,7 @@ machinesRouter.post('/:id/assignments/:assignmentId/status', asyncHandler(async 
         `M/${assignment.machine_code}`,
         `M/${assignment.machine_code}`,
         performed_by,
-        buildMachineStatusChangeNote(assertMachineAssignmentStatus(previousStatus), nextStatus, notes || null),
+        notes || 'Note added',
       ],
     );
 

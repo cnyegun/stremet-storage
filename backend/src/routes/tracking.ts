@@ -59,7 +59,7 @@ trackingRouter.get('/unit/:unitCode', asyncHandler(async (req, res) => {
 
   // Check machine assignments
   const machineResult = await pool.query(`
-    SELECT ma.id AS assignment_id, ma.unit_code, ma.status, ma.quantity, ma.assigned_at, ma.assigned_by,
+    SELECT ma.id AS assignment_id, ma.unit_code, 'processing'::text AS status, ma.quantity, ma.assigned_at, ma.assigned_by,
       i.id AS item_id, i.item_code, i.name AS item_name, i.material, i.weight_kg,
       c.name AS customer_name, c.code AS customer_code,
       m.id AS machine_id, m.code AS machine_code, m.name AS machine_name, m.category AS machine_category
@@ -163,26 +163,16 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
         if (machineResult.rows.length === 0) throw new Error(`Machine ${machineCode} not found`);
         const machine = machineResult.rows[0];
 
-        // Case A: Toggle Status (Already at this machine)
+        // Case A: Toggle Status (Deprecated, now just a note)
         if (sourceType === 'machine' && currentAssignment?.machine_id === machine.id) {
-            const assignment = currentAssignment!;
-            const statusMap: Record<string, string> = {
-                'queued': 'processing',
-                'processing': 'ready_for_storage',
-                'ready_for_storage': 'processing', // Loop back or keep same
-                'needs_attention': 'processing'
-            };
-            const nextStatus = statusMap[assignment.status || ''] || 'processing';
-            
-            await client.query('UPDATE machine_assignments SET status = $1, updated_at = NOW() WHERE id = $2', [nextStatus, assignment.id]);
             await client.query(
                 `INSERT INTO activity_log (id, item_id, action, from_location, to_location, performed_by, notes)
                  VALUES ($1, $2, 'note_added', $3, $4, $5, $6)`,
-                [uuidv4(), itemId, 'note_added', location_code, location_code, performed_by, `Status toggled to ${nextStatus}`]
+                [uuidv4(), itemId, 'note_added', location_code, location_code, performed_by, `Item confirmed at machine`]
             );
 
             await client.query('COMMIT');
-            res.json({ data: { unit_code: scan_code, location: location_code, status: nextStatus, action: 'status_toggle' } });
+            res.json({ data: { unit_code: scan_code, location: location_code, status: 'processed', action: 'status_toggle' } });
             return;
         }
 
@@ -211,10 +201,11 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
 
         // Create new machine assignment
         const newMaId = uuidv4();
+        const parentUnitCode = isUnit ? unitCode : null;
         await client.query(
-            `INSERT INTO machine_assignments (id, item_id, machine_id, unit_code, status, quantity, assigned_at, assigned_by)
+            `INSERT INTO machine_assignments (id, item_id, machine_id, unit_code, parent_unit_code, quantity, assigned_at, assigned_by)
              VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)`,
-            [newMaId, itemId, machine.id, unitCode, 'queued', 1, performed_by]
+            [newMaId, itemId, machine.id, unitCode, parentUnitCode, 1, performed_by]
         );
 
         await client.query(
@@ -224,7 +215,74 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
         );
 
         await client.query('COMMIT');
-        res.json({ data: { unit_code: unitCode, location: location_code, status: 'queued', action: 'production_start' } });
+
+        // --- Suggestion Logic ---
+        let suggestion = null;
+        try {
+            const itemResult = await pool.query('SELECT * FROM items WHERE id = $1', [itemId]);
+            const item = itemResult.rows[0];
+            const slotsResult = await pool.query(`
+                SELECT ss.id AS shelf_slot_id, ss.rack_id, ss.row_number, ss.column_number, 
+                       ss.max_volume_m3, ss.current_volume_m3, ss.current_weight_kg, ss.max_weight_kg, ss.max_height,
+                       r.code AS rack_code, r.rack_type, r.display_order, r.position_x, r.position_y
+                FROM shelf_slots ss
+                JOIN racks r ON ss.rack_id = r.id
+                WHERE (ss.max_volume_m3 - ss.current_volume_m3) >= ($1::numeric * $2::numeric)
+                ORDER BY r.display_order ASC
+                LIMIT 20
+            `, [1, Number(item.volume_m3) || 0.1]);
+
+            if (slotsResult.rows.length > 0) {
+                const suggestions = slotsResult.rows.map(slot => ({
+                    ...slot,
+                    score: OptimizerService.scoreSlot(
+                        {
+                            cell_id: slot.shelf_slot_id,
+                            rack_id: slot.rack_id,
+                            row_number: slot.row_number,
+                            column_number: slot.column_number,
+                            max_volume_m3: Number(slot.max_volume_m3),
+                            current_volume_m3: Number(slot.current_volume_m3),
+                            current_weight_kg: Number(slot.current_weight_kg),
+                            max_weight_kg: Number(slot.max_weight_kg),
+                            max_height: slot.max_height,
+                            rack_code: slot.rack_code,
+                            rack_type: slot.rack_type,
+                            display_order: slot.display_order,
+                            position_x: slot.position_x,
+                            position_y: slot.position_y
+                        },
+                        {
+                            type: item.type,
+                            weight_kg: Number(item.weight_kg),
+                            volume_m3: Number(item.volume_m3),
+                            turnover_class: item.turnover_class,
+                            quantity: 1,
+                            is_stackable: item.is_stackable,
+                            delivery_date: item.delivery_date
+                        }
+                    )
+                })).sort((a, b) => a.score - b.score);
+
+                suggestion = {
+                    shelf_slot_id: suggestions[0].shelf_slot_id,
+                    location: buildRackLocationCode(suggestions[0].rack_code, suggestions[0].row_number, suggestions[0].column_number),
+                    reason: "Optimized return location suggested by volumetric analysis."
+                };
+            }
+        } catch (optErr) {
+            console.error('Optimization suggestion failed in scan route:', optErr);
+        }
+
+        res.json({ 
+            data: { 
+                unit_code: unitCode, 
+                location: location_code, 
+                status: 'processed', 
+                action: 'production_start',
+                suggested_return_slot: suggestion
+            } 
+        });
         return;
     }
 
@@ -248,18 +306,35 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
         if (sourceType === 'machine') {
             await client.query('UPDATE machine_assignments SET removed_at = NOW(), removed_by = $1 WHERE id = $2', [performed_by, currentAssignment.id]);
         } else if (sourceType === 'shelf') {
+            const oldAssignment = currentAssignment as any;
+            const itemResult = await client.query('SELECT weight_kg, volume_m3 FROM items WHERE id = $1', [itemId]);
+            const item = itemResult.rows[0];
+            const weightToSubtract = (Number(item.weight_kg) || 0) * (Number(oldAssignment.quantity) || 1);
+            const volumeToSubtract = (Number(item.volume_m3) || 0.1) * (Number(oldAssignment.quantity) || 1);
+
             await client.query('UPDATE storage_assignments SET checked_out_at = NOW(), checked_out_by = $1 WHERE id = $2', [performed_by, currentAssignment.id]);
-            await client.query('UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0) WHERE id = $1', [currentAssignment.shelf_slot_id]);
+            await client.query(
+                'UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), current_weight_kg = GREATEST(current_weight_kg - $1, 0), current_volume_m3 = GREATEST(current_volume_m3 - $2, 0), updated_at = NOW() WHERE id = $3', 
+                [weightToSubtract, volumeToSubtract, oldAssignment.shelf_slot_id]
+            );
         }
 
         // Checkin to new shelf
         const newSaId = uuidv4();
+        const itemResult = await client.query('SELECT weight_kg, volume_m3 FROM items WHERE id = $1', [itemId]);
+        const item = itemResult.rows[0];
+        const weightToAdd = (Number(item.weight_kg) || 0) * 1; // Quantity is 1 in scan route
+        const volumeToAdd = (Number(item.volume_m3) || 0.1) * 1;
+
         await client.query(
-            `INSERT INTO storage_assignments (id, item_id, shelf_slot_id, unit_code, quantity, checked_in_at, checked_in_by)
-             VALUES ($1, $2, $3, $4, $5, NOW(), $6)`,
-            [newSaId, itemId, shelf.id, unitCode, 1, performed_by]
+            `INSERT INTO storage_assignments (id, item_id, shelf_slot_id, unit_code, parent_unit_code, quantity, checked_in_at, checked_in_by)
+             VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)`,
+            [newSaId, itemId, shelf.id, unitCode, currentAssignment?.unit_code || null, 1, performed_by]
         );
-        await client.query('UPDATE shelf_slots SET current_count = current_count + 1 WHERE id = $1', [shelf.id]);
+        await client.query(
+            'UPDATE shelf_slots SET current_count = current_count + 1, current_weight_kg = current_weight_kg + $1, current_volume_m3 = current_volume_m3 + $2, updated_at = NOW() WHERE id = $3', 
+            [weightToAdd, volumeToAdd, shelf.id]
+        );
 
         await client.query('COMMIT');
         res.json({ data: { unit_code: unitCode, location: location_code, status: 'stored', action: 'storage_checkin' } });
@@ -271,9 +346,9 @@ trackingRouter.post('/scan', asyncHandler(async (req, res) => {
         if (!isUnit || !currentAssignment) throw new Error("Unit not found or active.");
         
         if (sourceType === 'machine') {
-            await client.query('UPDATE machine_assignments SET removed_at = NOW(), removed_by = $1 WHERE id = $2', [performed_by, currentAssignment.id]);
+            await client.query('UPDATE machine_assignments SET removed_at = NOW(), removed_by = $1, notes = COALESCE(notes, $2) WHERE id = $3', [performed_by, 'Shipped via scan', currentAssignment.id]);
         } else {
-            await client.query('UPDATE storage_assignments SET checked_out_at = NOW(), checked_out_by = $1 WHERE id = $2', [performed_by, currentAssignment.id]);
+            await client.query('UPDATE storage_assignments SET checked_out_at = NOW(), checked_out_by = $1, notes = COALESCE(notes, $2) WHERE id = $3', [performed_by, 'Shipped via scan', currentAssignment.id]);
             await client.query('UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0) WHERE id = $1', [currentAssignment.shelf_slot_id]);
         }
 

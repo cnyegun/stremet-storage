@@ -35,6 +35,9 @@ function mapRackFromDetail(rack: RackWithShelves): MapRack {
     max_volume_m3: toNumber(cell.max_volume_m3),
     current_volume_m3: toNumber(cell.current_volume_m3),
     current_count: toNumber(cell.current_count),
+    current_weight_kg: toNumber(cell.current_weight_kg),
+    measured_weight_kg: toNumber(cell.measured_weight_kg),
+    weight_discrepancy_threshold: toNumber(cell.weight_discrepancy_threshold),
     items: mapCellItems(cell.items),
     checkin_href: `/check-in?rack=${encodeURIComponent(rack.id)}&cell=${encodeURIComponent(cell.id)}`,
   }));
@@ -47,8 +50,8 @@ function mapRackFromDetail(rack: RackWithShelves): MapRack {
     rack_type: rack.rack_type,
     row_count: rack.row_count,
     column_count: rack.column_count,
-    occupancy_used: cells.reduce((sum, cell) => sum + cell.current_count, 0),
-    occupancy_total: cells.reduce((sum, cell) => sum + cell.capacity, 0),
+    occupancy_used: Number(cells.reduce((sum, cell) => sum + (cell.current_volume_m3 || 0), 0).toFixed(2)),
+    occupancy_total: Number(cells.reduce((sum, cell) => sum + (cell.max_volume_m3 || 0), 0).toFixed(2)),
     cells,
   };
 }
@@ -62,8 +65,8 @@ function mapRackSummary(rack: RackWithStats): MapRack {
     rack_type: rack.rack_type,
     row_count: rack.row_count,
     column_count: rack.column_count,
-    occupancy_used: toNumber(rack.items_stored),
-    occupancy_total: toNumber(rack.total_capacity),
+    occupancy_used: Number(toNumber(rack.items_stored).toFixed(2)),
+    occupancy_total: Number(toNumber(rack.total_capacity).toFixed(2)),
     cells: [],
   };
 }
@@ -71,7 +74,7 @@ function mapRackSummary(rack: RackWithStats): MapRack {
 function buildStats(racks: MapRack[]): WarehouseMapData['stats'] {
   const totalSlots = racks.reduce((sum, rack) => sum + (rack.cells.length || rack.row_count * rack.column_count), 0);
   const occupiedSlots = racks.reduce((sum, rack) => sum + rack.cells.filter((cell) => cell.current_count > 0).length, 0);
-  const totalItemsStored = racks.reduce((sum, rack) => sum + rack.occupancy_used, 0);
+  const totalItemsStored = Number(racks.reduce((sum, rack) => sum + rack.occupancy_used, 0).toFixed(2));
 
   return {
     total_items_stored: totalItemsStored,
